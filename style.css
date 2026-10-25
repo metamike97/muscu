@@ -73,7 +73,7 @@ li .tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 #tabs button.on { color: var(--accent); }
 
 /* modèles */
-.fields { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 8px; margin-top: 8px; }
+.fields { display: grid; grid-template-columns: 0.8fr 1.2fr 1fr 1fr; gap: 6px; margin-top: 8px; }
 .field { display: flex; flex-direction: column; gap: 2px; }
 .field input { padding: 8px; }
 
@@ -141,3 +141,10 @@ th, td { padding: 6px 4px; border-top: 1px solid var(--line); font-variant-numer
 .ch-tip-val b { font-size: 1rem; white-space: nowrap; }
 .ch-key { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--series-1); border-radius: 2px; }
 .ch-tip-more { color: var(--muted); }
+
+/* notes, records, poids de corps */
+.note { display: block; width: 100%; margin-top: 8px; font: inherit; font-size: 16px; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; resize: vertical; }
+.pr { color: var(--ok-text); font-weight: 600; margin: 0 4px 4px 40px; }
+.wform { display: grid; grid-template-columns: 1.2fr 1fr; gap: 8px; margin-top: 8px; }
+.wform input { min-width: 0; width: 100%; font-size: 16px; }
+.wform .btn { grid-column: 1 / -1; }

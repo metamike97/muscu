@@ -13,6 +13,7 @@ function buildBackup() {
       templates: d.templates,
       sessions: d.sessions.filter((s) => s.end), // la séance en cours n'est pas exportée
       nameOverrides: d.nameOverrides || {}, // noms d'exercices corrigés
+      bodyweight: d.bodyweight || [],
     },
   };
 }
@@ -60,12 +61,14 @@ function parseBackup(text) {
     Array.isArray(s.exercises) && s.exercises.every((e) => okEx(e) && Array.isArray(e.sets)));
   // les éléments supprimés (sur n'importe quel appareil) ne ressuscitent pas par un import
   const tomb = store.data.tombstones;
-  const goodT = validT.filter((t) => !tomb.templates[t.id]);
-  const goodS = validS.filter((s) => !tomb.sessions[s.id]);
+  const goodT = validT.filter((t) => !tomb.templates[t.id]).map(cleanTemplate);
+  const goodS = validS.filter((s) => !tomb.sessions[s.id]).map(cleanSession);
+  const allW = cleanWeights(obj.data.bodyweight);
+  const weights = allW.filter((w) => !tomb.weights[w.id]);
   return {
-    templates: goodT, sessions: goodS,
+    templates: goodT, sessions: goodS, weights,
     skipped: templates.length - validT.length + sessions.length - validS.length,
-    deleted: validT.length - goodT.length + validS.length - goodS.length,
+    deleted: validT.length - goodT.length + validS.length - goodS.length + allW.length - weights.length,
     nameOverrides: cleanOverrides(obj.data.nameOverrides),
   };
 }
@@ -78,7 +81,7 @@ function mergeById(local, incoming) {
   for (const x of incoming) {
     const cur = map.get(x.id);
     if (!cur) { added++; map.set(x.id, x); }
-    else if ((x.updatedAt || 0) >= (cur.updatedAt || 0)) { updated++; map.set(x.id, x); }
+    else if (stampOf(x) >= stampOf(cur)) { updated++; map.set(x.id, x); }
   }
   return { list: [...map.values()], added, updated };
 }
@@ -87,16 +90,18 @@ async function importData(file) {
   let b;
   try { b = parseBackup(await file.text()); } catch (e) { return alert(e.message); }
   const names = Object.keys(b.nameOverrides).length;
-  if (!b.sessions.length && !b.templates.length && !names) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
+  if (!b.sessions.length && !b.templates.length && !b.weights.length && !names) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
   const s = mergeById(store.data.sessions, b.sessions);
   const t = mergeById(store.data.templates, b.templates);
-  const msg = 'Importer ' + b.sessions.length + ' séance(s), ' + b.templates.length + ' modèle(s) et ' + names + ' nom(s) d\'exercice corrigé(s) ?\n' +
-    '• Nouveaux : ' + (s.added + t.added) + '\n• Déjà présents (remplacés) : ' + (s.updated + t.updated) +
+  const w = mergeById(store.data.bodyweight, b.weights);
+  const msg = 'Importer ' + b.sessions.length + ' séance(s), ' + b.templates.length + ' modèle(s), ' + b.weights.length + ' pesée(s) et ' + names + ' nom(s) d\'exercice corrigé(s) ?\n' +
+    '• Nouveaux : ' + (s.added + t.added + w.added) + '\n• Déjà présents (remplacés si plus récents) : ' + (s.updated + t.updated + w.updated) +
     (b.skipped ? '\n• Ignorés (invalides) : ' + b.skipped : '') +
     (b.deleted ? '\n• Ignorés (supprimés depuis) : ' + b.deleted : '') + '\n\nRien n\'est supprimé de ce qui existe déjà.';
   if (!confirm(msg)) return;
   store.data.sessions = s.list;
   store.data.templates = t.list;
+  store.data.bodyweight = w.list;
   store.data.nameOverrides = mergeOverrides(store.data.nameOverrides, b.nameOverrides);
   lib.refreshOverrides();
   store.save();

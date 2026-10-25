@@ -90,14 +90,18 @@ async function writeRemote(doc, sha) {
 }
 
 // ---------- fusion (fonctions pures) ----------
-const emptyDoc = () => ({ version: 1, templates: [], sessions: [], tombstones: { templates: {}, sessions: {} }, nameOverrides: {} });
+const emptyDoc = () => ({ version: 1, templates: [], sessions: [], tombstones: { templates: {}, sessions: {}, weights: {} }, nameOverrides: {}, bodyweight: [] });
 
 function normDoc(d) {
   const t = (d.tombstones || {});
   return {
-    version: 1, templates: d.templates || [], sessions: d.sessions || [],
-    tombstones: { templates: t.templates || {}, sessions: t.sessions || {} },
-    nameOverrides: cleanOverrides(d.nameOverrides), // absent des anciens fichiers distants : vide
+    version: 1,
+    templates: (d.templates || []).map(cleanTemplate),
+    sessions: (d.sessions || []).map(cleanSession),
+    tombstones: { templates: t.templates || {}, sessions: t.sessions || {}, weights: t.weights || {} },
+    // champs absents des anciens fichiers distants : vides
+    nameOverrides: cleanOverrides(d.nameOverrides),
+    bodyweight: cleanWeights(d.bodyweight),
   };
 }
 
@@ -114,8 +118,8 @@ const sortedTemplates = (list) => [...list].sort((a, b) => (a.createdAt || 0) - 
 
 // a = local (prioritaire à égalité, pour conserver les mêmes objets), b = distant
 function mergeDocs(a, b) {
-  const tomb = { templates: { ...b.tombstones.templates }, sessions: { ...b.tombstones.sessions } };
-  for (const kind of ['templates', 'sessions']) {
+  const tomb = { templates: { ...b.tombstones.templates }, sessions: { ...b.tombstones.sessions }, weights: { ...b.tombstones.weights } };
+  for (const kind of ['templates', 'sessions', 'weights']) {
     for (const [id, ts] of Object.entries(a.tombstones[kind])) tomb[kind][id] = Math.max(ts, tomb[kind][id] || 0);
   }
   const templates = new Map();
@@ -123,9 +127,17 @@ function mergeDocs(a, b) {
     const cur = templates.get(t.id);
     if (!cur || (t.updatedAt || 0) >= (cur.updatedAt || 0)) templates.set(t.id, t);
   }
+  // séances : le plus récent gagne (une note peut être modifiée après coup) ; à égalité on garde l'objet local
   const sessions = new Map();
-  for (const s of b.sessions) sessions.set(s.id, s);
-  for (const s of a.sessions) sessions.set(s.id, s); // séances terminées = immuables : on garde l'objet local
+  for (const s of [...b.sessions, ...a.sessions]) {
+    const cur = sessions.get(s.id);
+    if (!cur || stampOf(s) >= stampOf(cur)) sessions.set(s.id, s);
+  }
+  const weights = new Map();
+  for (const w of [...b.bodyweight, ...a.bodyweight]) {
+    const cur = weights.get(w.id);
+    if (!cur || w.updatedAt >= cur.updatedAt) weights.set(w.id, w);
+  }
   return {
     version: 1,
     // la suppression gagne si elle est postérieure ou égale à la dernière modification du modèle
@@ -133,6 +145,7 @@ function mergeDocs(a, b) {
     sessions: sortedById([...sessions.values()].filter((s) => !(s.id in tomb.sessions))),
     tombstones: tomb,
     nameOverrides: mergeOverrides(a.nameOverrides, b.nameOverrides),
+    bodyweight: [...weights.values()].filter((w) => !(tomb.weights[w.id] >= w.updatedAt)).sort((x, y) => x.t - y.t || byId(x, y)),
   };
 }
 
@@ -143,6 +156,7 @@ const localDoc = () => ({
   sessions: store.data.sessions.filter((s) => s.end),
   tombstones: store.data.tombstones,
   nameOverrides: store.data.nameOverrides,
+  bodyweight: store.data.bodyweight,
 });
 
 function applyDoc(doc) {
@@ -152,6 +166,7 @@ function applyDoc(doc) {
   d.sessions = [...active, ...doc.sessions];
   d.tombstones = doc.tombstones;
   d.nameOverrides = doc.nameOverrides;
+  d.bodyweight = doc.bodyweight;
   lib.refreshOverrides(); // recherche à jour avec les noms reçus des autres appareils
   store.save();
 }

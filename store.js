@@ -22,7 +22,9 @@ const store = {
     d.tombstones = d.tombstones || {};
     d.tombstones.templates = d.tombstones.templates || {};
     d.tombstones.sessions = d.tombstones.sessions || {};
+    d.tombstones.weights = d.tombstones.weights || {};
     d.nameOverrides = cleanOverrides(d.nameOverrides);
+    d.bodyweight = cleanWeights(d.bodyweight);
     return d;
   },
 
@@ -50,6 +52,41 @@ function cleanOverrides(obj) {
   }
   return out;
 }
+// poids de corps { id, t (ms, jour de la mesure), kg, updatedAt } : on ne garde que les entrées bien formées
+function cleanWeights(list) {
+  const out = [];
+  if (!Array.isArray(list)) return out;
+  for (const w of list) {
+    if (w && typeof w.id === 'string' && w.id.length <= 80 && Number.isFinite(w.t) && Number.isFinite(w.kg) && w.kg >= 1 && w.kg <= 700 && Number.isFinite(w.updatedAt)) {
+      out.push({ id: w.id, t: w.t, kg: w.kg, updatedAt: w.updatedAt });
+    }
+  }
+  return out;
+}
+// séances et modèles reçus d'un fichier / du dépôt : on nettoie les champs ajoutés (notes, charges, dates)
+const NOTE_MAX = 2000;
+function cleanNoteOn(o) {
+  if ('note' in o) { if (typeof o.note === 'string') o.note = o.note.slice(0, NOTE_MAX); else delete o.note; }
+}
+function cleanNumOn(o, key, lo, hi) {
+  if (key in o && o[key] != null && !(Number.isFinite(o[key]) && o[key] >= lo && o[key] <= hi)) o[key] = null;
+}
+function cleanSession(s) {
+  const c = { ...s };
+  cleanNoteOn(c);
+  if ('updatedAt' in c && !Number.isFinite(c.updatedAt)) delete c.updatedAt;
+  c.exercises = (c.exercises || []).map((e) => { const x = { ...e }; cleanNoteOn(x); cleanNumOn(x, 'targetKg', 0, 1000); return x; });
+  return c;
+}
+function cleanTemplate(t) {
+  const c = { ...t };
+  if ('updatedAt' in c && !Number.isFinite(c.updatedAt)) delete c.updatedAt;
+  c.exercises = (t.exercises || []).map((e) => { const x = { ...e }; cleanNumOn(x, 'kg', 0, 1000); return x; });
+  return c;
+}
+// date de dernière modification d'un élément (séances terminées avant l'ajout des notes : leur date de fin)
+const stampOf = (x) => x.updatedAt || x.end || 0;
+
 // le plus récent gagne ; à égalité, a (local) l'emporte
 function mergeOverrides(a, b) {
   const out = { ...b };

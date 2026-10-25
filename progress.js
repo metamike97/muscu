@@ -26,10 +26,25 @@ function exHistory(exId) {
 
 // ---------- liste ----------
 
-function renderProgressList(root) {
+let progressView = 'exos'; // 'exos' | 'records' | 'poids'
+
+// Onglet Progrès : Exercices (graphiques), Records, Poids de corps
+function renderProgressTab(root) {
+  const content = h('div');
+  const views = [['exos', 'Exercices'], ['records', 'Records'], ['poids', 'Poids']];
+  root.replaceChildren(h('div', { class: 'pad' },
+    h('h1', {}, 'Progrès'),
+    h('div', { class: 'seg' }, views.map(([k, l]) => h('button', { class: 'seg-b' + (progressView === k ? ' on' : ''), onclick: () => { progressView = k; renderProgressTab(root); } }, l))),
+    content));
+  if (progressView === 'records') renderRecordsList(content);
+  else if (progressView === 'poids') renderWeight(content);
+  else renderProgressList(content);
+}
+
+function renderProgressList(container) {
   const q = h('input', { type: 'search', placeholder: 'Rechercher un exercice (français ou anglais)', autocomplete: 'off', autocapitalize: 'off', spellcheck: false, oninput: render });
   const list = h('div');
-  root.replaceChildren(h('div', { class: 'pad' }, h('h1', {}, 'Progrès'), q, list));
+  setChildren(container, q, list);
 
   const rows = [...new Set(store.data.sessions.filter((s) => s.end).flatMap((s) => s.exercises.map((e) => e.exId)))]
     .map((id) => ({ id, hist: exHistory(id) }))
@@ -56,6 +71,14 @@ function renderProgressList(root) {
 }
 
 // ---------- détail ----------
+
+// carte "Records" d'un exercice (charge max, 1RM estimé, reps max au poids du corps)
+function recordsCard(exId) {
+  const lines = recordLines(exerciseRecords(exId));
+  if (!lines.length) return null;
+  return h('div', { class: 'card' }, h('b', {}, '🏆 Records'),
+    lines.map(([label, value, t]) => h('div', { class: 'histset' }, h('span', { class: 'muted' }, label), h('span', {}, h('b', {}, value), h('span', { class: 'muted small' }, '  ' + shortDate(t))))));
+}
 
 function openProgress(exId) {
   const ov = overlay();
@@ -116,6 +139,7 @@ function openProgress(exId) {
       hist.length === 0 && h('p', { class: 'muted' }, 'Aucune séance sur cette période.'),
       tiles,
       bodyweight && hist.length > 0 && h('p', { class: 'muted small' }, 'Exercice au poids du corps : seules les répétitions sont suivies.'),
+      hist.length > 0 && recordsCard(exId),
       hist.length > 0 && charts,
       hist.length > 0 && h('details', { class: 'card tablewrap' },
         h('summary', {}, 'Voir le tableau'),

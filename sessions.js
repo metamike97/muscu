@@ -13,9 +13,49 @@ function lastPerf(exId) {
   const done = store.data.sessions.filter((s) => s.end).sort((a, b) => b.start - a.start);
   for (const s of done) {
     const ex = s.exercises.find((e) => e.exId === exId);
-    if (ex && ex.sets.length) return { date: s.start, sets: ex.sets };
+    if (ex && ex.sets.length) return { date: s.start, sets: ex.sets, note: ex.note };
   }
   return null;
+}
+
+// charge la plus lourde de la dernière séance (suggestion dans l'éditeur de modèle)
+function lastKgText(exId) {
+  const p = lastPerf(exId);
+  const kg = p ? Math.max(...p.sets.map((x) => x.kg || 0)) : 0;
+  return kg > 0 ? fmtNum(kg) : '';
+}
+// "8-10" si les reps varient, "8" sinon
+function repsRange(sets) {
+  const r = sets.filter((x) => x.done !== false && x.reps).map((x) => x.reps);
+  if (!r.length) return '';
+  const lo = Math.min(...r), hi = Math.max(...r);
+  return lo === hi ? String(lo) : lo + '-' + hi;
+}
+// ce dont startSession a besoin, depuis un modèle ou depuis une séance passée
+const fromTemplate = (t) => ({
+  name: t.name, templateId: t.id,
+  exercises: t.exercises.map((te) => ({ exId: te.exId, restSec: te.restSec, targetReps: te.reps, targetKg: te.kg == null ? null : te.kg, nSets: te.sets })),
+});
+const fromSession = (s) => ({
+  name: s.name, templateId: s.templateId || null,
+  exercises: s.exercises.map((ex) => ({ exId: ex.exId, restSec: ex.restSec, targetReps: ex.targetReps || repsRange(ex.sets), targetKg: null, nSets: ex.sets.length })),
+});
+
+function saveAsTemplate(s) {
+  const name = (prompt('Nom du modèle :', s.name) || '').trim();
+  if (!name) return;
+  const now = Date.now();
+  store.data.templates.push({
+    id: uid(), name, createdAt: now, updatedAt: now,
+    exercises: s.exercises.map((ex) => {
+      const heavy = ex.sets.find((x) => x.kg > 0);
+      return { exId: ex.exId, sets: ex.sets.length, reps: ex.targetReps || repsRange(ex.sets), kg: heavy ? heavy.kg : null, restSec: ex.restSec == null ? DEFAULT_REST : ex.restSec };
+    }),
+  });
+  store.save();
+  refreshView();
+  syncSoon();
+  toast('Modèle « ' + name + ' » créé');
 }
 
 // ---------- Accueil ----------
@@ -41,7 +81,7 @@ function renderHome(root) {
       h('div', { class: 'row between' },
         h('div', { class: 'grow' }, h('b', {}, t.name), h('div', { class: 'muted' }, t.exercises.length + ' exercice' + (t.exercises.length > 1 ? 's' : ''))),
         h('button', { class: 'btn', onclick: () => editTemplate(t.id) }, 'Modifier'),
-        !active && h('button', { class: 'btn primary', onclick: () => startSession(t) }, 'Démarrer')))),
+        !active && h('button', { class: 'btn primary', onclick: () => startSession(fromTemplate(t)) }, 'Démarrer')))),
     h('button', { class: 'btn wide', onclick: () => editTemplate(null) }, '+ Nouveau modèle'),
 
     h('h2', {}, 'Historique'),
@@ -50,7 +90,8 @@ function renderHome(root) {
       h('div', { class: 'row between' }, h('b', {}, s.name), h('span', { class: 'muted' }, fmtDate(s.start))),
       h('div', { class: 'muted' },
         s.exercises.length + ' exercice' + (s.exercises.length > 1 ? 's' : '') + ' · ' +
-        Math.round(volume(s)) + ' kg de volume · ' + fmtClock((s.end - s.start) / 1000))))),
+        Math.round(volume(s)) + ' kg de volume · ' + fmtClock((s.end - s.start) / 1000) +
+        (s.note || s.exercises.some((e) => e.note) ? ' · 📝' : ''))))),
   );
 }
 
@@ -76,9 +117,10 @@ function editTemplate(id) {
         h('div', { class: 'fields' },
           field('Séries', h('input', { type: 'text', inputMode: 'numeric', value: te.sets, oninput: (e) => (te.sets = Math.max(1, parseInt(e.target.value) || 1)) })),
           field('Reps visées', h('input', { type: 'text', value: te.reps, placeholder: '8-12', oninput: (e) => (te.reps = e.target.value) })),
+          field('Charge (kg)', h('input', { type: 'text', inputMode: 'decimal', value: fmtNum(te.kg), placeholder: lastKgText(te.exId), oninput: (e) => (te.kg = parseNum(e.target.value)) })),
           field('Repos (s)', h('input', { type: 'text', inputMode: 'numeric', value: te.restSec, oninput: (e) => (te.restSec = parseInt(e.target.value) || 0) }))))),
 
-      h('button', { class: 'btn wide', onclick: () => pickExercise((exId) => { draft.exercises.push({ exId, sets: 3, reps: '8-12', restSec: DEFAULT_REST }); render(); }) }, '+ Ajouter un exercice'),
+      h('button', { class: 'btn wide', onclick: () => pickExercise((exId) => { draft.exercises.push({ exId, sets: 3, reps: '8-12', kg: null, restSec: DEFAULT_REST }); render(); }) }, '+ Ajouter un exercice'),
       h('button', { class: 'btn primary wide', onclick: save }, 'Enregistrer'),
       existing && h('button', { class: 'btn danger wide', onclick: remove }, 'Supprimer le modèle'),
     ));
@@ -116,15 +158,16 @@ function editTemplate(id) {
 
 // ---------- Séance en cours ----------
 
-function startSession(template) {
+// spec : null (séance libre) ou fromTemplate(...) / fromSession(...)
+function startSession(spec) {
   const s = {
     id: uid(),
-    name: template ? template.name : 'Séance libre',
-    templateId: template ? template.id : null,
+    name: spec ? spec.name : 'Séance libre',
+    templateId: spec ? spec.templateId : null,
     start: Date.now(),
     end: null,
-    exercises: template
-      ? template.exercises.map((te) => ({ exId: te.exId, restSec: te.restSec, targetReps: te.reps, sets: Array.from({ length: te.sets }, newSet) }))
+    exercises: spec
+      ? spec.exercises.map((e) => ({ exId: e.exId, restSec: e.restSec, targetReps: e.targetReps || '', targetKg: e.targetKg == null ? null : e.targetKg, sets: Array.from({ length: e.nSets }, newSet) }))
       : [],
   };
   store.data.sessions.push(s);
@@ -180,14 +223,17 @@ function openSession(sid) {
   const timer = setInterval(tick, 250);
   ov.onClose(() => clearInterval(timer));
 
-  // --- pré-remplissages : séance précédente > série précédente de cette séance > reps visées
+  // --- pré-remplissages
+  //   charge : si le modèle en fixe une -> la série précédente de cette séance, sinon la charge du modèle ;
+  //            sans charge dans le modèle -> même série de la dernière séance, puis série précédente
+  //   reps   : même série de la dernière séance, puis série précédente, puis reps visées
   function placeholders(ex, i, prev) {
     const ps = prev && (prev.sets[i] || prev.sets[prev.sets.length - 1]);
-    let kg = ps ? ps.kg : null, reps = ps ? ps.reps : null;
-    if (kg == null || reps == null) {
-      const before = ex.sets.slice(0, i).reverse().find((x) => x.done);
-      if (before) { if (kg == null) kg = before.kg; if (reps == null) reps = before.reps; }
-    }
+    const before = ex.sets.slice(0, i).reverse().find((x) => x.done);
+    let kg;
+    if (ex.targetKg != null) kg = before ? before.kg : ex.targetKg;
+    else kg = ps && ps.kg != null ? ps.kg : before ? before.kg : null;
+    let reps = ps && ps.reps != null ? ps.reps : before ? before.reps : null;
     if (reps == null) { const m = (ex.targetReps || '').match(/\d+/); if (m) reps = +m[0]; }
     return { kg, reps };
   }
@@ -205,6 +251,8 @@ function openSession(sid) {
     primeAudio();
     store.save();
     startRest(ex.restSec);
+    const rec = prFlags(s).get(s.exercises.indexOf(ex) + ':' + i);
+    if (rec) toast('🏆 ' + prText(rec, st));
     render();
   }
 
@@ -221,6 +269,7 @@ function openSession(sid) {
     });
   }
 
+  let flags = new Map();
   function exerciseCard(ex, ei) {
     const prev = lastPerf(ex.exId);
     return h('div', { class: 'card' },
@@ -229,18 +278,24 @@ function openSession(sid) {
         h('button', { class: 'btn sm', 'aria-label': 'Corriger le nom', onclick: () => editExerciseName(ex.exId, render) }, '✎'),
         h('button', { class: 'btn sm', 'aria-label': 'Retirer', onclick: () => { if (confirm('Retirer cet exercice de la séance ?')) { s.exercises.splice(ei, 1); store.save(); render(); } } }, '✕')),
       prev && h('div', { class: 'muted small' }, 'Dernière fois (' + new Date(prev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ') : ' + prev.sets.map(setText).join(' · ')),
-      ex.targetReps && h('div', { class: 'muted small' }, 'Objectif : ' + ex.sets.length + ' × ' + ex.targetReps),
+      prev && prev.note && h('div', { class: 'muted small' }, 'Note précédente : ' + prev.note),
+      (ex.targetReps || ex.targetKg != null) && h('div', { class: 'muted small' }, 'Objectif : ' + ex.sets.length + ' × ' + (ex.targetReps || '?') + (ex.targetKg != null ? ' @ ' + fmtNum(ex.targetKg) + ' kg' : '')),
 
       h('div', { class: 'setrow head' }, h('span', {}, 'Série'), h('span', {}, 'kg'), h('span', {}, 'Reps'), h('span', {}, 'RIR'), h('span', {})),
       ex.sets.map((st, i) => {
         const ph = placeholders(ex, i, prev);
-        return h('div', { class: 'setrow' + (st.done ? ' done' : '') },
-          h('span', { class: 'idx' }, i + 1),
-          numInput(st, 'kg', ph.kg, false),
-          numInput(st, 'reps', ph.reps, true),
-          numInput(st, 'rir', null, true),
-          h('button', { class: 'check' + (st.done ? ' on' : ''), 'aria-label': 'Valider la série', onclick: () => toggleDone(ex, i, prev) }, '✓'));
+        const rec = flags.get(ei + ':' + i);
+        return [
+          h('div', { class: 'setrow' + (st.done ? ' done' : '') },
+            h('span', { class: 'idx' }, i + 1),
+            numInput(st, 'kg', ph.kg, false),
+            numInput(st, 'reps', ph.reps, true),
+            numInput(st, 'rir', null, true),
+            h('button', { class: 'check' + (st.done ? ' on' : ''), 'aria-label': 'Valider la série', onclick: () => toggleDone(ex, i, prev) }, '✓')),
+          rec && h('div', { class: 'pr small' }, '🏆 ' + prText(rec, st)),
+        ];
       }),
+      h('textarea', { class: 'note', rows: 1, maxLength: NOTE_MAX, placeholder: 'Note (sensations, réglage de machine…)', value: ex.note || '', oninput: (e) => { if (e.target.value) ex.note = e.target.value; else delete ex.note; store.save(); } }),
       h('div', { class: 'row' },
         h('button', { class: 'btn sm', onclick: () => { ex.sets.push(newSet()); store.save(); render(); } }, '+ Série'),
         h('button', { class: 'btn sm', disabled: ex.sets.length <= 1, onclick: () => { const last = ex.sets[ex.sets.length - 1]; if (last.done && !confirm('Supprimer la dernière série (déjà validée) ?')) return; ex.sets.pop(); store.save(); render(); } }, '− Série'),
@@ -250,6 +305,7 @@ function openSession(sid) {
 
   function render() {
     const scroll = ov.el.scrollTop;
+    flags = prFlags(s);
     setChildren(body,
       h('div', { class: 'row between' },
         h('div', { class: 'grow' }, h('h1', {}, s.name), elapsed),
@@ -257,6 +313,7 @@ function openSession(sid) {
         h('button', { class: 'btn primary', onclick: finish }, 'Terminer')),
       s.exercises.map(exerciseCard),
       h('button', { class: 'btn wide', onclick: () => pickExercise((exId) => { s.exercises.push({ exId, restSec: DEFAULT_REST, targetReps: '', sets: [newSet(), newSet(), newSet()] }); store.save(); render(); }) }, '+ Ajouter un exercice'),
+      h('textarea', { class: 'note', rows: 2, maxLength: NOTE_MAX, placeholder: 'Note de séance (forme du jour, sommeil…)', value: s.note || '', oninput: (e) => { if (e.target.value) s.note = e.target.value; else delete s.note; store.save(); } }),
       h('button', { class: 'btn danger wide', onclick: discard }, 'Abandonner la séance'),
       h('div', { class: 'spacer' }));
     ov.el.scrollTop = scroll;
@@ -272,15 +329,17 @@ function openSession(sid) {
     }
     const msg = pending ? pending + ' série(s) non validée(s) seront ignorées. Terminer la séance ?' : 'Terminer la séance ?';
     if (!confirm(msg)) return;
+    const recordExercises = new Set([...prFlags(s).keys()].map((k) => k.split(':')[0])).size;
     s.exercises.forEach((ex) => (ex.sets = ex.sets.filter((x) => x.done)));
     s.exercises = s.exercises.filter((ex) => ex.sets.length);
     s.end = Date.now();
+    s.updatedAt = s.end;
     store.data.activeId = null;
     store.data.rest = null;
     store.save();
     ov.close();
     refreshView();
-    toast('Séance enregistrée');
+    toast('Séance enregistrée' + (recordExercises ? ' · 🏆 records sur ' + recordExercises + ' exercice' + (recordExercises > 1 ? 's' : '') : ''));
     syncSoon();
   }
 
@@ -304,12 +363,30 @@ function viewSession(sid) {
   const s = sessionById(sid);
   if (!s) return;
   const ov = overlay();
+  const flags = prFlags(s);
+  const busy = !!store.data.activeId;
+  // les notes restent modifiables après coup ; updatedAt fait gagner la version la plus récente à la synchro
+  // enregistré à chaque frappe (pas seulement à la perte de focus : sur iPhone, toucher « Fermer » ne la déclenche pas toujours)
+  const noteBox = (obj, placeholder, rows) => h('textarea', { class: 'note', rows, maxLength: NOTE_MAX, placeholder, value: obj.note || '', oninput: (e) => {
+    const v = e.target.value;
+    if (v.trim()) obj.note = v; else delete obj.note; // le champ garde le texte tel quel (espaces compris)
+    s.updatedAt = Date.now();
+    store.save();
+    syncSoon();
+  } });
   ov.el.append(h('div', { class: 'pad' },
     h('div', { class: 'row between' }, h('div', { class: 'grow' }, h('h1', {}, s.name), h('div', { class: 'muted' }, fmtDate(s.start) + ' · ' + fmtClock((s.end - s.start) / 1000))), h('button', { class: 'btn', onclick: () => ov.close() }, 'Fermer')),
     h('p', { class: 'muted' }, 'Volume total : ' + Math.round(volume(s)) + ' kg'),
-    s.exercises.map((ex) => h('div', { class: 'card' },
+    noteBox(s, 'Note de séance…', 2),
+    s.exercises.map((ex, ei) => h('div', { class: 'card' },
       h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId)),
-      ex.sets.map((x, i) => h('div', { class: 'histset' }, h('span', { class: 'muted' }, 'Série ' + (i + 1)), h('span', {}, fmtNum(x.kg) + ' kg × ' + x.reps + (x.rir != null ? ' · RIR ' + x.rir : ''))))
-    )),
+      ex.sets.map((x, i) => [
+        h('div', { class: 'histset' }, h('span', { class: 'muted' }, 'Série ' + (i + 1)), h('span', {}, fmtNum(x.kg) + ' kg × ' + x.reps + (x.rir != null ? ' · RIR ' + x.rir : ''))),
+        flags.has(ei + ':' + i) && h('div', { class: 'pr small' }, '🏆 ' + prText(flags.get(ei + ':' + i), x)),
+      ]),
+      noteBox(ex, 'Note sur cet exercice…', 1))),
+    h('button', { class: 'btn primary wide', disabled: busy, onclick: () => { ov.close(); startSession(fromSession(s)); } }, 'Refaire cette séance'),
+    busy && h('p', { class: 'muted small' }, 'Termine ou abandonne la séance en cours pour en démarrer une autre.'),
+    h('button', { class: 'btn wide', onclick: () => saveAsTemplate(s) }, 'Enregistrer comme modèle'),
     h('button', { class: 'btn danger wide', onclick: () => { if (confirm('Supprimer définitivement cette séance ?')) { store.data.sessions = store.data.sessions.filter((x) => x.id !== s.id); store.data.tombstones.sessions[s.id] = Date.now(); store.save(); ov.close(); refreshView(); syncSoon(); } } }, 'Supprimer la séance')));
 }
