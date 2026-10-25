@@ -55,29 +55,44 @@ function parseBackup(text) {
   const { templates, sessions } = obj.data;
   if (!Array.isArray(templates) || !Array.isArray(sessions)) throw new Error('Sauvegarde incomplète.');
   const okEx = (e) => e && typeof e.exId === 'string';
-  const goodT = templates.filter((t) => t && t.id && typeof t.name === 'string' && Array.isArray(t.exercises) && t.exercises.every(okEx));
-  const goodS = sessions.filter((s) => s && s.id && typeof s.start === 'number' && typeof s.end === 'number' &&
+  const validT = templates.filter((t) => t && t.id && typeof t.name === 'string' && Array.isArray(t.exercises) && t.exercises.every(okEx));
+  const validS = sessions.filter((s) => s && s.id && typeof s.start === 'number' && typeof s.end === 'number' &&
     Array.isArray(s.exercises) && s.exercises.every((e) => okEx(e) && Array.isArray(e.sets)));
-  return { templates: goodT, sessions: goodS, skipped: templates.length - goodT.length + sessions.length - goodS.length, nameOverrides: obj.data.nameOverrides || {} };
+  // les éléments supprimés (sur n'importe quel appareil) ne ressuscitent pas par un import
+  const tomb = store.data.tombstones;
+  const goodT = validT.filter((t) => !tomb.templates[t.id]);
+  const goodS = validS.filter((s) => !tomb.sessions[s.id]);
+  return {
+    templates: goodT, sessions: goodS,
+    skipped: templates.length - validT.length + sessions.length - validS.length,
+    deleted: validT.length - goodT.length + validS.length - goodS.length,
+    nameOverrides: obj.data.nameOverrides || {},
+  };
 }
 
-// Fusion par identifiant : on ajoute ce qui manque, on remplace ce qui a le même id
+// Fusion par identifiant : on ajoute ce qui manque ; si l'id existe déjà, on garde le plus récent
+// (les séances terminées ne changent plus ; les modèles ont une date de modification updatedAt)
 function mergeById(local, incoming) {
   const map = new Map(local.map((x) => [x.id, x]));
   let added = 0, updated = 0;
-  for (const x of incoming) { map.has(x.id) ? updated++ : added++; map.set(x.id, x); }
+  for (const x of incoming) {
+    const cur = map.get(x.id);
+    if (!cur) { added++; map.set(x.id, x); }
+    else if ((x.updatedAt || 0) >= (cur.updatedAt || 0)) { updated++; map.set(x.id, x); }
+  }
   return { list: [...map.values()], added, updated };
 }
 
 async function importData(file) {
   let b;
   try { b = parseBackup(await file.text()); } catch (e) { return alert(e.message); }
-  if (!b.sessions.length && !b.templates.length) return alert('Aucune séance ni modèle valide dans ce fichier.');
+  if (!b.sessions.length && !b.templates.length) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
   const s = mergeById(store.data.sessions, b.sessions);
   const t = mergeById(store.data.templates, b.templates);
   const msg = 'Importer ' + b.sessions.length + ' séance(s) et ' + b.templates.length + ' modèle(s) ?\n' +
     '• Nouveaux : ' + (s.added + t.added) + '\n• Déjà présents (remplacés) : ' + (s.updated + t.updated) +
-    (b.skipped ? '\n• Ignorés (invalides) : ' + b.skipped : '') + '\n\nRien n\'est supprimé de ce qui existe déjà.';
+    (b.skipped ? '\n• Ignorés (invalides) : ' + b.skipped : '') +
+    (b.deleted ? '\n• Ignorés (supprimés depuis) : ' + b.deleted : '') + '\n\nRien n\'est supprimé de ce qui existe déjà.';
   if (!confirm(msg)) return;
   store.data.sessions = s.list;
   store.data.templates = t.list;
@@ -85,6 +100,7 @@ async function importData(file) {
   store.save();
   toast('Import terminé');
   refreshView();
+  syncSoon();
 }
 
 function renderSettings(root) {
@@ -107,6 +123,8 @@ function renderSettings(root) {
       picker,
       h('p', { class: 'muted' }, "Les données restent sur cet appareil. Exporte régulièrement : sur iPhone, choisis « Enregistrer dans Fichiers » (iCloud Drive). L'import fusionne sans rien effacer.")),
     persistLine,
+    h('h2', {}, 'Synchronisation'),
+    renderSyncCard(),
     h('h2', {}, 'À propos'),
     h('p', { class: 'muted' }, "Bibliothèque d'exercices : free-exercise-db (domaine public).")));
 }
@@ -115,6 +133,8 @@ function backupReminder() {
   const d = store.data;
   const finished = d.sessions.filter((s) => s.end).length;
   const stale = !d.lastExport || Date.now() - d.lastExport > 14 * 864e5;
+  // la synchronisation tient lieu de sauvegarde tant qu'elle fonctionne
+  if (sync.on && sync.cfg.lastSync && !sync.cfg.lastError && Date.now() - sync.cfg.lastSync < 14 * 864e5) return null;
   return finished > 0 && stale
     ? h('div', { class: 'card banner' }, h('div', { class: 'grow muted' }, 'Pense à sauvegarder tes données.'), h('button', { class: 'btn', onclick: () => showTab('reglages') }, 'Réglages'))
     : null;

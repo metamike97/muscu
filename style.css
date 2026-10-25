@@ -39,6 +39,7 @@ input[type=search], input[type=text] { width: 100%; font-size: 16px; } /* 16px :
 .grow { flex: 1; min-width: 0; }
 .muted { color: var(--muted); font-size: 0.85rem; }
 .small { font-size: 0.8rem; margin-top: 2px; }
+.err { color: var(--danger); }
 .en { color: var(--muted); font-size: 0.85rem; }
 .spacer { height: 120px; }
 

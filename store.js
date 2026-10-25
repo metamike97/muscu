@@ -17,7 +17,12 @@ const store = {
       this.data = null;
     }
     if (!this.data) this.data = { version: 1, templates: [], sessions: [], activeId: null, rest: null };
-    return this.data;
+    // tombstones : suppressions { id: horodatage }, nécessaires pour que la synchro propage les suppressions
+    const d = this.data;
+    d.tombstones = d.tombstones || {};
+    d.tombstones.templates = d.tombstones.templates || {};
+    d.tombstones.sessions = d.tombstones.sessions || {};
+    return d;
   },
 
   save() {

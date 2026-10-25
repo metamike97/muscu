@@ -32,4 +32,5 @@ lib.ready.then(() => {
   // reprise automatique d'une séance en cours (ex. app rouverte après fermeture)
   const a = store.data.activeId && sessionById(store.data.activeId);
   if (a) openSession(a.id);
+  syncSoon(500); // synchronisation au démarrage (si activée)
 });

@@ -92,19 +92,24 @@ function editTemplate(id) {
     draft.name = draft.name.trim();
     if (!draft.name) return toast('Donne un nom au modèle');
     if (!draft.exercises.length) return toast('Ajoute au moins un exercice');
+    draft.updatedAt = Date.now();
+    draft.createdAt = draft.createdAt || draft.updatedAt;
     const list = store.data.templates;
     const idx = list.findIndex((t) => t.id === draft.id);
     if (idx >= 0) list[idx] = draft; else list.push(draft);
     store.save();
     ov.close();
     refreshView();
+    syncSoon();
   }
   function remove() {
     if (!confirm('Supprimer ce modèle ? Les séances déjà faites sont conservées.')) return;
     store.data.templates = store.data.templates.filter((t) => t.id !== draft.id);
+    store.data.tombstones.templates[draft.id] = Date.now();
     store.save();
     ov.close();
     refreshView();
+    syncSoon();
   }
   render();
 }
@@ -275,6 +280,7 @@ function openSession(sid) {
     ov.close();
     refreshView();
     toast('Séance enregistrée');
+    syncSoon();
   }
 
   function discard(skipConfirm) {
@@ -304,5 +310,5 @@ function viewSession(sid) {
       h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId)),
       ex.sets.map((x, i) => h('div', { class: 'histset' }, h('span', { class: 'muted' }, 'Série ' + (i + 1)), h('span', {}, fmtNum(x.kg) + ' kg × ' + x.reps + (x.rir != null ? ' · RIR ' + x.rir : ''))))
     )),
-    h('button', { class: 'btn danger wide', onclick: () => { if (confirm('Supprimer définitivement cette séance ?')) { store.data.sessions = store.data.sessions.filter((x) => x.id !== s.id); store.save(); ov.close(); refreshView(); } } }, 'Supprimer la séance')));
+    h('button', { class: 'btn danger wide', onclick: () => { if (confirm('Supprimer définitivement cette séance ?')) { store.data.sessions = store.data.sessions.filter((x) => x.id !== s.id); store.data.tombstones.sessions[s.id] = Date.now(); store.save(); ov.close(); refreshView(); syncSoon(); } } }, 'Supprimer la séance')));
 }
