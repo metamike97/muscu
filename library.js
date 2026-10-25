@@ -7,8 +7,21 @@ const uniq = (a) => [...new Set(a)];
 const trMuscle = (m) => TR.muscles[m] || m;
 const trEquip = (v) => TR.equipment[v === null ? 'null' : v] || v;
 const trCat = (v) => TR.category[v] || v;
-lib.fr = (id) => lib.namesFr[id] || (lib.byId[id] && lib.byId[id].name) || id;
+// nom d'origine (traduction automatique), puis nom affiché (avec la correction éventuelle de l'utilisateur)
+lib.frDefault = (id) => lib.namesFr[id] || (lib.byId[id] && lib.byId[id].name) || id;
+lib.override = (id) => {
+  const o = store.data && store.data.nameOverrides && store.data.nameOverrides[id];
+  return o && o.name ? o.name : null;
+};
+lib.fr = (id) => lib.override(id) || lib.frDefault(id);
 lib.en = (id) => (lib.byId[id] && lib.byId[id].name) || '';
+// la recherche trouve le nom d'origine, l'anglais ET le nom corrigé
+lib.refreshOverrides = () => {
+  for (const e of lib.exercises) {
+    const o = lib.override(e.id);
+    e.haystack = e.baseHay + (o ? ' ' + norm(o) : '');
+  }
+};
 
 lib.ready = (async () => {
   const [ex, fr] = await Promise.all([
@@ -18,15 +31,16 @@ lib.ready = (async () => {
   lib.namesFr = fr;
   lib.exercises = ex.map((e) => ({
     ...e,
-    // tout ce qui est cherchable : noms FR + EN, muscles, matériel, catégorie (FR + EN)
-    haystack: norm([
-      lib.fr(e.id), e.name,
+    // tout ce qui est cherchable : noms FR (d'origine) + EN, muscles, matériel, catégorie (FR + EN)
+    baseHay: norm([
+      lib.namesFr[e.id] || e.name, e.name,
       ...e.primaryMuscles.map((m) => trMuscle(m) + ' ' + m),
       trEquip(e.equipment) + ' ' + (e.equipment || ''),
       trCat(e.category) + ' ' + e.category,
     ].join(' ')),
   }));
   lib.exercises.forEach((e) => (lib.byId[e.id] = e));
+  lib.refreshOverrides(); // (store.data peut ne pas être chargé : alors rien à ajouter, app.js rappellera)
 })();
 
 // Menu déroulant : "Français (english)" pour retrouver l'anglais aussi
@@ -89,7 +103,7 @@ function mountLibrary(root, { onPick, title, onClose } = {}) {
           fr !== e.name && h('div', { class: 'en' }, e.name),
           h('div', { class: 'tags' }, [...e.primaryMuscles.map(trMuscle), trEquip(e.equipment)].map((t) => h('span', { class: 'tag' }, t)))
         ),
-        onPick && h('span', { class: 'plus' }, '+')
+        onPick ? h('span', { class: 'plus' }, '+') : h('span', { class: 'edit', 'aria-label': 'Corriger le nom' }, '✎')
       );
       if (onPick) li.addEventListener('click', () => {
         onPick(e.id);
@@ -97,10 +111,43 @@ function mountLibrary(root, { onPick, title, onClose } = {}) {
         p.textContent = '✓';
         setTimeout(() => (p.textContent = '+'), 900);
       });
+      else li.addEventListener('click', () => editExerciseName(e.id, render));
       return li;
     }));
     more.hidden = res.length <= shown;
   }
+}
+
+// Corriger le nom français d'un exercice (synchronisé entre appareils). onDone() est appelé après enregistrement.
+function editExerciseName(exId, onDone) {
+  const ov = overlay();
+  const original = lib.frDefault(exId);
+  const hasOverride = !!lib.override(exId);
+  const input = h('input', { type: 'text', value: lib.fr(exId), maxLength: 80, autocomplete: 'off', spellcheck: true });
+
+  function commit(name) {
+    // un nom vide ou identique à l'original = "rétabli" (on garde une entrée vide pour que ça se propage)
+    const reset = !name || name === original;
+    store.data.nameOverrides[exId] = { name: reset ? '' : name, updatedAt: Date.now() };
+    store.save();
+    lib.refreshOverrides();
+    ov.close();
+    if (onDone) onDone();
+    refreshView();
+    syncSoon();
+    toast(reset ? "Nom d'origine rétabli" : 'Nom enregistré');
+  }
+
+  ov.el.append(h('div', { class: 'pad' },
+    h('div', { class: 'row between' }, h('h1', {}, 'Corriger le nom'), h('button', { class: 'btn', onclick: () => ov.close() }, 'Annuler')),
+    h('p', { class: 'en' }, lib.en(exId)),
+    h('label', { class: 'field' }, h('span', { class: 'muted' }, 'Nom affiché'), input),
+    h('p', { class: 'muted' }, "Nom d'origine : " + original),
+    h('button', { class: 'btn primary wide', onclick: () => commit(input.value.trim()) }, 'Enregistrer'),
+    hasOverride && h('button', { class: 'btn wide', onclick: () => commit('') }, "Rétablir le nom d'origine"),
+    h('p', { class: 'muted' }, "Le nom anglais et le nom d'origine restent utilisables dans la recherche.")));
+  input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commit(input.value.trim()); });
+  setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 
 // Ouvre le sélecteur plein écran ; onPick(exId) est appelé à chaque exercice touché

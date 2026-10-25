@@ -12,7 +12,7 @@ function buildBackup() {
     data: {
       templates: d.templates,
       sessions: d.sessions.filter((s) => s.end), // la séance en cours n'est pas exportée
-      nameOverrides: d.nameOverrides || {}, // réservé : corrections de traduction (étape suivante)
+      nameOverrides: d.nameOverrides || {}, // noms d'exercices corrigés
     },
   };
 }
@@ -66,7 +66,7 @@ function parseBackup(text) {
     templates: goodT, sessions: goodS,
     skipped: templates.length - validT.length + sessions.length - validS.length,
     deleted: validT.length - goodT.length + validS.length - goodS.length,
-    nameOverrides: obj.data.nameOverrides || {},
+    nameOverrides: cleanOverrides(obj.data.nameOverrides),
   };
 }
 
@@ -86,17 +86,19 @@ function mergeById(local, incoming) {
 async function importData(file) {
   let b;
   try { b = parseBackup(await file.text()); } catch (e) { return alert(e.message); }
-  if (!b.sessions.length && !b.templates.length) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
+  const names = Object.keys(b.nameOverrides).length;
+  if (!b.sessions.length && !b.templates.length && !names) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
   const s = mergeById(store.data.sessions, b.sessions);
   const t = mergeById(store.data.templates, b.templates);
-  const msg = 'Importer ' + b.sessions.length + ' séance(s) et ' + b.templates.length + ' modèle(s) ?\n' +
+  const msg = 'Importer ' + b.sessions.length + ' séance(s), ' + b.templates.length + ' modèle(s) et ' + names + ' nom(s) d\'exercice corrigé(s) ?\n' +
     '• Nouveaux : ' + (s.added + t.added) + '\n• Déjà présents (remplacés) : ' + (s.updated + t.updated) +
     (b.skipped ? '\n• Ignorés (invalides) : ' + b.skipped : '') +
     (b.deleted ? '\n• Ignorés (supprimés depuis) : ' + b.deleted : '') + '\n\nRien n\'est supprimé de ce qui existe déjà.';
   if (!confirm(msg)) return;
   store.data.sessions = s.list;
   store.data.templates = t.list;
-  store.data.nameOverrides = { ...(store.data.nameOverrides || {}), ...b.nameOverrides };
+  store.data.nameOverrides = mergeOverrides(store.data.nameOverrides, b.nameOverrides);
+  lib.refreshOverrides();
   store.save();
   toast('Import terminé');
   refreshView();

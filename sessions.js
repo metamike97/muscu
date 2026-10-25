@@ -226,6 +226,7 @@ function openSession(sid) {
     return h('div', { class: 'card' },
       h('div', { class: 'row between' },
         h('div', { class: 'grow' }, h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId))),
+        h('button', { class: 'btn sm', 'aria-label': 'Corriger le nom', onclick: () => editExerciseName(ex.exId, render) }, '✎'),
         h('button', { class: 'btn sm', 'aria-label': 'Retirer', onclick: () => { if (confirm('Retirer cet exercice de la séance ?')) { s.exercises.splice(ei, 1); store.save(); render(); } } }, '✕')),
       prev && h('div', { class: 'muted small' }, 'Dernière fois (' + new Date(prev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ') : ' + prev.sets.map(setText).join(' · ')),
       ex.targetReps && h('div', { class: 'muted small' }, 'Objectif : ' + ex.sets.length + ' × ' + ex.targetReps),

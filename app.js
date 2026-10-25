@@ -29,6 +29,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
 
 store.load();
 lib.ready.then(() => {
+  lib.refreshOverrides(); // noms corrigés par l'utilisateur -> recherche
   refreshView();
   // reprise automatique d'une séance en cours (ex. app rouverte après fermeture)
   const a = store.data.activeId && sessionById(store.data.activeId);

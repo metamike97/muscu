@@ -60,6 +60,7 @@ li.pick { cursor: pointer; }
 li .fr { font-weight: 600; }
 li .tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
 .tag { font-size: 0.75rem; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.edit { color: var(--muted); padding: 0 4px; }
 .plus { font-size: 1.4rem; color: var(--accent); width: 28px; text-align: center; }
 
 /* fenêtres plein écran */

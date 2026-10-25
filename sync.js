@@ -90,11 +90,15 @@ async function writeRemote(doc, sha) {
 }
 
 // ---------- fusion (fonctions pures) ----------
-const emptyDoc = () => ({ version: 1, templates: [], sessions: [], tombstones: { templates: {}, sessions: {} } });
+const emptyDoc = () => ({ version: 1, templates: [], sessions: [], tombstones: { templates: {}, sessions: {} }, nameOverrides: {} });
 
 function normDoc(d) {
   const t = (d.tombstones || {});
-  return { version: 1, templates: d.templates || [], sessions: d.sessions || [], tombstones: { templates: t.templates || {}, sessions: t.sessions || {} } };
+  return {
+    version: 1, templates: d.templates || [], sessions: d.sessions || [],
+    tombstones: { templates: t.templates || {}, sessions: t.sessions || {} },
+    nameOverrides: cleanOverrides(d.nameOverrides), // absent des anciens fichiers distants : vide
+  };
 }
 
 // JSON à clés triées : permet de comparer deux documents sans faux écarts d'ordre
@@ -128,6 +132,7 @@ function mergeDocs(a, b) {
     templates: sortedTemplates([...templates.values()].filter((t) => !(tomb.templates[t.id] >= (t.updatedAt || 0)))),
     sessions: sortedById([...sessions.values()].filter((s) => !(s.id in tomb.sessions))),
     tombstones: tomb,
+    nameOverrides: mergeOverrides(a.nameOverrides, b.nameOverrides),
   };
 }
 
@@ -137,6 +142,7 @@ const localDoc = () => ({
   templates: store.data.templates,
   sessions: store.data.sessions.filter((s) => s.end),
   tombstones: store.data.tombstones,
+  nameOverrides: store.data.nameOverrides,
 });
 
 function applyDoc(doc) {
@@ -145,6 +151,8 @@ function applyDoc(doc) {
   d.templates = doc.templates;
   d.sessions = [...active, ...doc.sessions];
   d.tombstones = doc.tombstones;
+  d.nameOverrides = doc.nameOverrides;
+  lib.refreshOverrides(); // recherche à jour avec les noms reçus des autres appareils
   store.save();
 }
 

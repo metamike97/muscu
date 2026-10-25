@@ -22,6 +22,7 @@ const store = {
     d.tombstones = d.tombstones || {};
     d.tombstones.templates = d.tombstones.templates || {};
     d.tombstones.sessions = d.tombstones.sessions || {};
+    d.nameOverrides = cleanOverrides(d.nameOverrides);
     return d;
   },
 
@@ -35,6 +36,26 @@ const store = {
     }
   },
 };
+
+// nameOverrides : noms d'exercices corrigés par l'utilisateur { exId: { name, updatedAt } }.
+// name === '' = "rétabli" : on garde l'entrée pour que le rétablissement se propage aux autres appareils.
+// Ces données peuvent venir d'un fichier ou du dépôt distant : on ne garde que ce qui a la bonne forme.
+function cleanOverrides(obj) {
+  const out = {};
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
+  for (const [id, o] of Object.entries(obj)) {
+    if (o && typeof o === 'object' && typeof o.name === 'string' && o.name.length <= 200 && Number.isFinite(o.updatedAt)) {
+      out[id] = { name: o.name, updatedAt: o.updatedAt };
+    }
+  }
+  return out;
+}
+// le plus récent gagne ; à égalité, a (local) l'emporte
+function mergeOverrides(a, b) {
+  const out = { ...b };
+  for (const [id, o] of Object.entries(a)) if (!out[id] || o.updatedAt >= out[id].updatedAt) out[id] = o;
+  return out;
+}
 
 const uid = () =>
   (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));

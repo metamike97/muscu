@@ -34,7 +34,7 @@ function renderProgressList(root) {
   const rows = [...new Set(store.data.sessions.filter((s) => s.end).flatMap((s) => s.exercises.map((e) => e.exId)))]
     .map((id) => ({ id, hist: exHistory(id) }))
     .filter((r) => r.hist.length)
-    .map((r) => ({ ...r, last: r.hist[r.hist.length - 1], hay: norm(lib.fr(r.id) + ' ' + lib.en(r.id)) }))
+    .map((r) => ({ ...r, last: r.hist[r.hist.length - 1], hay: norm(lib.fr(r.id) + ' ' + lib.frDefault(r.id) + ' ' + lib.en(r.id)) }))
     .sort((a, b) => b.last.t - a.last.t);
 
   function render() {
