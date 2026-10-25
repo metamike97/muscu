@@ -1,11 +1,13 @@
 :root {
   --bg: #f5f6f8; --card: #fff; --text: #14181d; --muted: #6b7480; --line: #e2e5ea;
   --accent: #2563eb; --accent-text: #fff; --ok: #16a34a; --ok-bg: #e7f6ec; --danger: #dc2626;
+  --series-1: #2a78d6; --axis: #c3c7ce; --ok-text: #006300; /* graphiques */
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #111418; --card: #1b2027; --text: #eef1f5; --muted: #98a2b0; --line: #2a313b;
     --accent: #5b8def; --accent-text: #0b1220; --ok: #4ade80; --ok-bg: #16301f; --danger: #f87171;
+    --series-1: #3987e5; --axis: #3a424d; --ok-text: #0ca30c;
   }
 }
 * { box-sizing: border-box; }
@@ -66,7 +68,7 @@ li .tags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; display: flex;
   background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
 }
-#tabs button { flex: 1; padding: 14px 0; border: 0; background: none; color: var(--muted); font: inherit; font-weight: 600; }
+#tabs button { flex: 1; padding: 14px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 0.9rem; font-weight: 600; }
 #tabs button.on { color: var(--accent); }
 
 /* modèles */
@@ -102,3 +104,39 @@ input.num::placeholder { color: var(--muted); opacity: 0.7; }
   opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 30; max-width: 90vw; text-align: center;
 }
 #toast.show { opacity: 1; }
+
+/* progression : indicateurs, filtre de période, tableau */
+.seg { display: flex; gap: 6px; margin: 8px 0 4px; }
+.seg-b { flex: 1; font: inherit; font-size: 0.9rem; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 4px; cursor: pointer; }
+.seg-b.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-width: 0; }
+.tile-v { font-size: 1.05rem; font-weight: 700; margin: 2px 0; white-space: nowrap; /* chiffres proportionnels : pas de tabular-nums sur un grand nombre isolé */ }
+.tile .up { color: var(--ok-text); font-weight: 600; }
+.tiles-note { grid-column: 1 / -1; margin: 0; }
+.tablewrap summary { cursor: pointer; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.9rem; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+th, td { padding: 6px 4px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; } /* colonnes alignées : tabular-nums ok ici */
+
+/* graphiques (SVG) */
+.chart { position: relative; margin-top: 6px; }
+.ch-holder { width: 100%; }
+.ch-svg { display: block; width: 100%; height: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; outline-offset: 2px; }
+.ch-grid { stroke: var(--line); stroke-width: 1; }
+.ch-axis { stroke: var(--axis); stroke-width: 1; }
+.ch-line { fill: none; stroke: var(--series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ch-area { fill: var(--series-1); opacity: 0.1; }
+.ch-ring { fill: var(--card); }
+.ch-dot { fill: var(--series-1); }
+.ch-cross { stroke: var(--muted); stroke-width: 1; }
+.ch-tick { fill: var(--muted); font-size: 11px; }
+.ch-label { fill: var(--text); font-size: 12px; font-weight: 600; }
+.ch-hit { fill: transparent; cursor: crosshair; }
+.ch-tip { position: absolute; z-index: 3; pointer-events: none; max-width: 48%; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 0.8rem; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.ch-tip[hidden] { display: none; }
+.ch-tip-date { color: var(--muted); }
+.ch-tip-val { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+.ch-tip-val b { font-size: 1rem; white-space: nowrap; }
+.ch-key { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--series-1); border-radius: 2px; }
+.ch-tip-more { color: var(--muted); }

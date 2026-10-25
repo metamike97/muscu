@@ -1,11 +1,11 @@
 // Service worker : garde tous les fichiers de l'app en cache pour fonctionner hors ligne.
 // VERSION est réécrite automatiquement par tools/stamp.py (hash du contenu) avant chaque déploiement :
 // un nouveau VERSION = un nouveau cache = les appareils récupèrent la nouvelle version.
-const VERSION = 'f1efc70341';
+const VERSION = '6852e37b3f';
 const CACHE = 'muscu-' + VERSION;
 const ASSETS = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
-  'translations.js', 'store.js', 'ui.js', 'library.js', 'sessions.js', 'backup.js', 'sync.js', 'app.js',
+  'translations.js', 'store.js', 'ui.js', 'library.js', 'sessions.js', 'charts.js', 'progress.js', 'backup.js', 'sync.js', 'app.js',
   'data/exercises_slim.json', 'data/noms_fr.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];

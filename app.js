@@ -5,6 +5,7 @@ function refreshView() {
   const view = document.getElementById('view');
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === currentTab));
   if (currentTab === 'seances') renderHome(view);
+  else if (currentTab === 'progres') renderProgressList(view);
   else if (currentTab === 'reglages') renderSettings(view);
   else mountLibrary(view);
 }
