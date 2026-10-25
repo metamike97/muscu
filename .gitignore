@@ -1,0 +1,6 @@
+.DS_Store
+.claude/
+# fichiers de travail de la traduction (déjà fusionnés dans noms_fr.json)
+data/noms_fr_[0-9].json
+# bibliothèque complète (1 Mo, avec images/instructions) : l'app utilise exercises_slim.json
+data/exercises.json
