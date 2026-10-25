@@ -74,12 +74,14 @@ function cleanNumOn(o, key, lo, hi) {
 function cleanSession(s) {
   const c = { ...s };
   cleanNoteOn(c);
+  if ('muscles' in c) c.muscles = cleanMuscles(c.muscles);
   if ('updatedAt' in c && !Number.isFinite(c.updatedAt)) delete c.updatedAt;
   c.exercises = (c.exercises || []).map((e) => { const x = { ...e }; cleanNoteOn(x); cleanNumOn(x, 'targetKg', 0, 1000); return x; });
   return c;
 }
 function cleanTemplate(t) {
   const c = { ...t };
+  if ('muscles' in c) c.muscles = cleanMuscles(c.muscles);
   if ('updatedAt' in c && !Number.isFinite(c.updatedAt)) delete c.updatedAt;
   c.exercises = (t.exercises || []).map((e) => { const x = { ...e }; cleanNumOn(x, 'kg', 0, 1000); return x; });
   return c;

@@ -33,11 +33,11 @@ function repsRange(sets) {
 }
 // ce dont startSession a besoin, depuis un modèle ou depuis une séance passée
 const fromTemplate = (t) => ({
-  name: t.name, templateId: t.id,
+  name: t.name, templateId: t.id, muscles: cleanMuscles(t.muscles),
   exercises: t.exercises.map((te) => ({ exId: te.exId, restSec: te.restSec, targetReps: te.reps, targetKg: te.kg == null ? null : te.kg, nSets: te.sets })),
 });
 const fromSession = (s) => ({
-  name: s.name, templateId: s.templateId || null,
+  name: s.name, templateId: s.templateId || null, muscles: cleanMuscles(s.muscles),
   exercises: s.exercises.map((ex) => ({ exId: ex.exId, restSec: ex.restSec, targetReps: ex.targetReps || repsRange(ex.sets), targetKg: null, nSets: ex.sets.length })),
 });
 
@@ -46,7 +46,7 @@ function saveAsTemplate(s) {
   if (!name) return;
   const now = Date.now();
   store.data.templates.push({
-    id: uid(), name, createdAt: now, updatedAt: now,
+    id: uid(), name, createdAt: now, updatedAt: now, muscles: sessionMuscles(s),
     exercises: s.exercises.map((ex) => {
       const heavy = ex.sets.find((x) => x.kg > 0);
       return { exId: ex.exId, sets: ex.sets.length, reps: ex.targetReps || repsRange(ex.sets), kg: heavy ? heavy.kg : null, restSec: ex.restSec == null ? DEFAULT_REST : ex.restSec };
@@ -79,7 +79,7 @@ function renderHome(root) {
     d.templates.length === 0 && h('p', { class: 'muted' }, 'Aucun modèle. Crée-en un (ex. Push, Pull, Jambes) pour démarrer vite une séance.'),
     d.templates.map((t) => h('div', { class: 'card' },
       h('div', { class: 'row between' },
-        h('div', { class: 'grow' }, h('b', {}, t.name), h('div', { class: 'muted' }, t.exercises.length + ' exercice' + (t.exercises.length > 1 ? 's' : ''))),
+        h('div', { class: 'grow' }, h('b', {}, t.name), h('div', { class: 'muted' }, t.exercises.length + ' exercice' + (t.exercises.length > 1 ? 's' : '') + (templateGroups(t).length ? ' · ' + groupLabels(templateGroups(t)) : ''))),
         h('button', { class: 'btn', onclick: () => editTemplate(t.id) }, 'Modifier'),
         !active && h('button', { class: 'btn primary', onclick: () => startSession(fromTemplate(t)) }, 'Démarrer')))),
     h('button', { class: 'btn wide', onclick: () => editTemplate(null) }, '+ Nouveau modèle'),
@@ -91,7 +91,8 @@ function renderHome(root) {
       h('div', { class: 'muted' },
         s.exercises.length + ' exercice' + (s.exercises.length > 1 ? 's' : '') + ' · ' +
         Math.round(volume(s)) + ' kg de volume · ' + fmtClock((s.end - s.start) / 1000) +
-        (s.note || s.exercises.some((e) => e.note) ? ' · 📝' : ''))))),
+        (s.note || s.exercises.some((e) => e.note) ? ' · 📝' : '')),
+      sessionMuscles(s).length > 0 && h('div', { class: 'muted small' }, groupLabels(sessionMuscles(s)))))),
   );
 }
 
@@ -99,7 +100,7 @@ function renderHome(root) {
 
 function editTemplate(id) {
   const existing = id && store.data.templates.find((t) => t.id === id);
-  const draft = existing ? JSON.parse(JSON.stringify(existing)) : { id: uid(), name: '', exercises: [] };
+  const draft = existing ? JSON.parse(JSON.stringify(existing)) : { id: uid(), name: '', exercises: [], muscles: [] };
   const ov = overlay();
 
   function render() {
@@ -107,6 +108,9 @@ function editTemplate(id) {
     ov.el.replaceChildren(h('div', { class: 'pad' },
       h('div', { class: 'row between' }, h('h1', {}, existing ? 'Modifier le modèle' : 'Nouveau modèle'), h('button', { class: 'btn', onclick: () => ov.close() }, 'Annuler')),
       h('input', { type: 'text', placeholder: 'Nom (ex. Push A)', value: draft.name, oninput: (e) => (draft.name = e.target.value) }),
+      h('div', { class: 'card' },
+        h('div', { class: 'row between' }, h('b', {}, 'Groupes ciblés'), h('button', { class: 'btn sm', onclick: () => { draft.muscles = groupsOfExercises(draft.exercises); render(); } }, 'Déduire des exercices')),
+        muscleChips(draft.muscles || [], (m) => { draft.muscles = m; })),
 
       draft.exercises.map((te, i) => h('div', { class: 'card' },
         h('div', { class: 'row between' },
@@ -134,6 +138,7 @@ function editTemplate(id) {
     draft.name = draft.name.trim();
     if (!draft.name) return toast('Donne un nom au modèle');
     if (!draft.exercises.length) return toast('Ajoute au moins un exercice');
+    draft.muscles = cleanMuscles(draft.muscles);
     draft.updatedAt = Date.now();
     draft.createdAt = draft.createdAt || draft.updatedAt;
     const list = store.data.templates;
@@ -164,6 +169,7 @@ function startSession(spec) {
     id: uid(),
     name: spec ? spec.name : 'Séance libre',
     templateId: spec ? spec.templateId : null,
+    muscles: spec ? cleanMuscles(spec.muscles) : [],
     start: Date.now(),
     end: null,
     exercises: spec
@@ -311,6 +317,10 @@ function openSession(sid) {
         h('div', { class: 'grow' }, h('h1', {}, s.name), elapsed),
         h('button', { class: 'btn', onclick: () => ov.close() }, 'Réduire'),
         h('button', { class: 'btn primary', onclick: finish }, 'Terminer')),
+      h('div', { class: 'card' },
+        h('b', {}, 'Groupes ciblés'),
+        muscleChips(s.muscles || [], (m) => { s.muscles = m; store.save(); render(); }),
+        !cleanMuscles(s.muscles).length && h('p', { class: 'muted small' }, 'Aucun groupe choisi : ' + (groupsOfExercises(s.exercises).length ? 'ceux de tes exercices seront utilisés (' + groupLabels(groupsOfExercises(s.exercises)) + ').' : 'ils seront déduits de tes exercices.'))),
       s.exercises.map(exerciseCard),
       h('button', { class: 'btn wide', onclick: () => pickExercise((exId) => { s.exercises.push({ exId, restSec: DEFAULT_REST, targetReps: '', sets: [newSet(), newSet(), newSet()] }); store.save(); render(); }) }, '+ Ajouter un exercice'),
       h('textarea', { class: 'note', rows: 2, maxLength: NOTE_MAX, placeholder: 'Note de séance (forme du jour, sommeil…)', value: s.note || '', oninput: (e) => { if (e.target.value) s.note = e.target.value; else delete s.note; store.save(); } }),
@@ -332,6 +342,7 @@ function openSession(sid) {
     const recordExercises = new Set([...prFlags(s).keys()].map((k) => k.split(':')[0])).size;
     s.exercises.forEach((ex) => (ex.sets = ex.sets.filter((x) => x.done)));
     s.exercises = s.exercises.filter((ex) => ex.sets.length);
+    s.muscles = cleanMuscles(s.muscles).length ? cleanMuscles(s.muscles) : workedGroups(s); // sans choix : groupes réellement travaillés
     s.end = Date.now();
     s.updatedAt = s.end;
     store.data.activeId = null;
@@ -363,6 +374,7 @@ function viewSession(sid) {
   const s = sessionById(sid);
   if (!s) return;
   const ov = overlay();
+  ov.onClose(() => refreshView()); // calendrier et historique à jour après d'éventuelles corrections
   const flags = prFlags(s);
   const busy = !!store.data.activeId;
   // les notes restent modifiables après coup ; updatedAt fait gagner la version la plus récente à la synchro
@@ -378,6 +390,10 @@ function viewSession(sid) {
     h('div', { class: 'row between' }, h('div', { class: 'grow' }, h('h1', {}, s.name), h('div', { class: 'muted' }, fmtDate(s.start) + ' · ' + fmtClock((s.end - s.start) / 1000))), h('button', { class: 'btn', onclick: () => ov.close() }, 'Fermer')),
     h('p', { class: 'muted' }, 'Volume total : ' + Math.round(volume(s)) + ' kg'),
     noteBox(s, 'Note de séance…', 2),
+    h('div', { class: 'card' },
+      h('b', {}, 'Groupes ciblés'),
+      muscleChips(sessionMuscles(s), (m) => { s.muscles = m; s.updatedAt = Date.now(); store.save(); syncSoon(); }),
+      h('p', { class: 'muted small' }, 'Modifie-les pour corriger le calendrier.')),
     s.exercises.map((ex, ei) => h('div', { class: 'card' },
       h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId)),
       ex.sets.map((x, i) => [
