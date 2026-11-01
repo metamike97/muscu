@@ -132,6 +132,8 @@ function renderSettings(root) {
     persistLine,
     h('h2', {}, 'Synchronisation'),
     renderSyncCard(),
+    h('h2', {}, 'Matériel'),
+    gearCard(),
     h('h2', {}, 'À propos'),
     h('p', { class: 'muted' }, "Bibliothèque d'exercices : free-exercise-db (domaine public).")));
 }

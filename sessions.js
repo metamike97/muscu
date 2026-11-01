@@ -60,13 +60,31 @@ function saveAsTemplate(s) {
 
 // ---------- Accueil ----------
 
+// Bandeau de l'accueil : séances depuis lundi, séries et volume sur 7 jours
+function weekStrip(history) {
+  const monday = new Date(); monday.setHours(0, 0, 0, 0); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const week = history.filter((s) => s.start >= monday.getTime()).length;
+  const last7 = history.filter((s) => Date.now() - s.start < 7 * 864e5);
+  const sets = last7.reduce((n, s) => n + s.exercises.reduce((a, ex) => a + ex.sets.filter((x) => x.done).length, 0), 0);
+  const vol = last7.reduce((a, s) => a + volume(s), 0);
+  const tile = (v, label) => h('div', { class: 'tile' }, h('div', { class: 'tile-v' }, v), h('div', { class: 'muted small' }, label));
+  return h('div', { class: 'tiles' },
+    tile(String(week), 'séance' + (week > 1 ? 's' : '') + ' cette semaine'),
+    tile(String(sets), 'séries sur 7 jours'),
+    tile(vol >= 1000 ? fmtNum(Math.round(vol / 100) / 10) + ' t' : Math.round(vol) + ' kg', 'soulevés sur 7 jours'));
+}
+
 function renderHome(root) {
   const d = store.data;
   const active = d.activeId && sessionById(d.activeId);
   const history = d.sessions.filter((s) => s.end).sort((a, b) => b.start - a.start);
+  const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const exCount = (n) => n + ' exercice' + (n > 1 ? 's' : '');
 
   root.replaceChildren(h('div', { class: 'pad' },
+    h('div', { class: 'eyebrow' }, today.charAt(0).toUpperCase() + today.slice(1)),
     h('h1', {}, 'Séances'),
+    history.length > 0 && weekStrip(history),
     backupReminder(),
 
     active && h('div', { class: 'card banner' },
@@ -77,22 +95,26 @@ function renderHome(root) {
 
     h('h2', {}, 'Modèles'),
     d.templates.length === 0 && h('p', { class: 'muted' }, 'Aucun modèle. Crée-en un (ex. Push, Pull, Jambes) pour démarrer vite une séance.'),
-    d.templates.map((t) => h('div', { class: 'card' },
-      h('div', { class: 'row between' },
-        h('div', { class: 'grow' }, h('b', {}, t.name), h('div', { class: 'muted' }, t.exercises.length + ' exercice' + (t.exercises.length > 1 ? 's' : '') + (templateGroups(t).length ? ' · ' + groupLabels(templateGroups(t)) : ''))),
-        h('button', { class: 'btn', onclick: () => editTemplate(t.id) }, 'Modifier'),
-        !active && h('button', { class: 'btn primary', onclick: () => startSession(fromTemplate(t)) }, 'Démarrer')))),
+    d.templates.map((t) => h('div', { class: 'card media' },
+      templateMap(t, { size: 'mini' }),
+      h('div', { class: 'grow' },
+        h('b', {}, t.name),
+        h('div', { class: 'muted' }, exCount(t.exercises.length) + (templateGroups(t).length ? ' · ' + groupLabels(templateGroups(t)) : '')),
+        h('div', { class: 'row end' },
+          h('button', { class: 'btn sm', onclick: () => editTemplate(t.id) }, 'Modifier'),
+          !active && h('button', { class: 'btn sm primary', onclick: () => startSession(fromTemplate(t)) }, 'Démarrer'))))),
     h('button', { class: 'btn wide', onclick: () => editTemplate(null) }, '+ Nouveau modèle'),
 
     h('h2', {}, 'Historique'),
     history.length === 0 && h('p', { class: 'muted' }, 'Aucune séance terminée pour le moment.'),
-    history.map((s) => h('div', { class: 'card tap', onclick: () => viewSession(s.id) },
-      h('div', { class: 'row between' }, h('b', {}, s.name), h('span', { class: 'muted' }, fmtDate(s.start))),
-      h('div', { class: 'muted' },
-        s.exercises.length + ' exercice' + (s.exercises.length > 1 ? 's' : '') + ' · ' +
-        Math.round(volume(s)) + ' kg de volume · ' + fmtClock((s.end - s.start) / 1000) +
-        (s.note || s.exercises.some((e) => e.note) ? ' · 📝' : '')),
-      sessionMuscles(s).length > 0 && h('div', { class: 'muted small' }, groupLabels(sessionMuscles(s)))))),
+    history.map((s) => h('div', { class: 'card tap media', onclick: () => viewSession(s.id) },
+      sessionMap(s, { size: 'mini' }),
+      h('div', { class: 'grow' },
+        h('div', { class: 'row between' }, h('b', {}, s.name), h('span', { class: 'muted' }, fmtDate(s.start))),
+        h('div', { class: 'muted' },
+          exCount(s.exercises.length) + ' · ' + Math.round(volume(s)) + ' kg de volume · ' + fmtClock((s.end - s.start) / 1000) +
+          (s.note || s.exercises.some((e) => e.note) ? ' · 📝' : '')),
+        sessionMuscles(s).length > 0 && h('div', { class: 'muted small' }, groupLabels(sessionMuscles(s))))))),
   );
 }
 
@@ -120,9 +142,14 @@ function editTemplate(id) {
           h('button', { class: 'btn sm danger', onclick: () => { draft.exercises.splice(i, 1); render(); } }, '✕')),
         h('div', { class: 'fields' },
           field('Séries', h('input', { type: 'text', inputMode: 'numeric', value: te.sets, oninput: (e) => (te.sets = Math.max(1, parseInt(e.target.value) || 1)) })),
-          field('Reps visées', h('input', { type: 'text', value: te.reps, placeholder: '8-12', oninput: (e) => (te.reps = e.target.value) })),
-          field('Charge (kg)', h('input', { type: 'text', inputMode: 'decimal', value: fmtNum(te.kg), placeholder: lastKgText(te.exId), oninput: (e) => (te.kg = parseNum(e.target.value)) })),
-          field('Repos (s)', h('input', { type: 'text', inputMode: 'numeric', value: te.restSec, oninput: (e) => (te.restSec = parseInt(e.target.value) || 0) }))))),
+          field('Reps visées', h('input', { type: 'text', value: te.reps, placeholder: '8-12', oninput: (e) => { te.reps = e.target.value; hints[i](); } })),
+          field(te.prog === 'aucune' ? 'Charge (kg)' : 'Départ (kg)', h('input', { type: 'text', inputMode: 'decimal', value: fmtNum(te.kg), placeholder: lastKgText(te.exId), oninput: (e) => { te.kg = parseNum(e.target.value); hints[i](); } })),
+          field('Repos (s)', h('input', { type: 'text', inputMode: 'numeric', value: te.restSec, oninput: (e) => (te.restSec = parseInt(e.target.value) || 0) }))),
+        h('div', { class: 'fields two' },
+          field('Progression', h('select', { onchange: (e) => { if (e.target.value === 'auto') delete te.prog; else te.prog = e.target.value; render(); } },
+            PROG_RULES.map(([v, l]) => h('option', { value: v, selected: (te.prog || 'auto') === v }, l)))),
+          te.prog !== 'aucune' && field('Palier (kg)', h('input', { type: 'text', inputMode: 'decimal', value: fmtNum(te.inc), placeholder: fmtNum(loadStep(te.exId)), oninput: (e) => { const v = parseNum(e.target.value); if (v > 0) te.inc = v; else delete te.inc; hints[i](); } }))),
+        progHint(te, i))),
 
       h('button', { class: 'btn wide', onclick: () => pickExercise((exId) => { draft.exercises.push({ exId, sets: 3, reps: '8-12', kg: null, restSec: DEFAULT_REST }); render(); }) }, '+ Ajouter un exercice'),
       h('button', { class: 'btn primary wide', onclick: save }, 'Enregistrer'),
@@ -132,6 +159,18 @@ function editTemplate(id) {
   }
 
   const field = (label, input) => h('label', { class: 'field' }, h('span', { class: 'muted' }, label), input);
+  // aperçu du conseil de progression, mis à jour pendant la saisie (sans tout redessiner : le clavier resterait ouvert ailleurs)
+  const hints = [];
+  function progHint(te, i) {
+    const el = h('p', { class: 'hint' });
+    hints[i] = () => {
+      const sg = suggestNext(te.exId, te.reps, te, te.kg);
+      el.textContent = sg ? 'Prochaine séance : ' + suggText(sg) + '. ' + sg.why
+        : te.prog === 'aucune' ? 'Pas de conseil : la charge du modèle reste fixe.' : 'Indique les reps visées (ex. 8-12) pour recevoir un conseil.';
+    };
+    hints[i]();
+    return el;
+  }
   function move(i, dir) { const [x] = draft.exercises.splice(i, 1); draft.exercises.splice(i + dir, 0, x); render(); }
 
   function save() {
@@ -163,6 +202,23 @@ function editTemplate(id) {
 
 // ---------- Séance en cours ----------
 
+// "62,5 kg × 8 reps" ou "12 reps" (poids du corps ou charge à choisir)
+const suggText = (sg) => (sg.kg > 0 ? kgText(sg.kg) + ' × ' : '') + sg.reps + ' reps';
+
+// exercice de séance à partir d'un exercice de spec ; la progression (règle du modèle, s'il existe) fixe la charge visée
+function planExercise(e, templateId) {
+  const t = templateId && store.data.templates.find((x) => x.id === templateId);
+  const te = t && t.exercises.find((x) => x.exId === e.exId);
+  const ex = { exId: e.exId, restSec: e.restSec, targetReps: e.targetReps || '', targetKg: e.targetKg == null ? null : e.targetKg, sets: Array.from({ length: e.nSets }, newSet) };
+  const sg = suggestNext(e.exId, ex.targetReps, te, te ? te.kg : ex.targetKg);
+  if (sg) {
+    if (sg.kg != null) ex.targetKg = sg.kg;
+    ex.sugReps = sg.reps;
+    ex.why = sg.why;
+  }
+  return ex;
+}
+
 // spec : null (séance libre) ou fromTemplate(...) / fromSession(...)
 function startSession(spec) {
   const s = {
@@ -172,9 +228,7 @@ function startSession(spec) {
     muscles: spec ? cleanMuscles(spec.muscles) : [],
     start: Date.now(),
     end: null,
-    exercises: spec
-      ? spec.exercises.map((e) => ({ exId: e.exId, restSec: e.restSec, targetReps: e.targetReps || '', targetKg: e.targetKg == null ? null : e.targetKg, sets: Array.from({ length: e.nSets }, newSet) }))
-      : [],
+    exercises: spec ? spec.exercises.map((e) => planExercise(e, spec.templateId)) : [],
   };
   store.data.sessions.push(s);
   store.data.activeId = s.id;
@@ -188,8 +242,9 @@ function openSession(sid) {
   const s = sessionById(sid);
   if (!s) return;
   const ov = overlay();
+  const head = h('div', { class: 'sess-head' });
   const body = h('div', { class: 'pad' });
-  const elapsed = h('span', { class: 'muted' });
+  const elapsed = h('span', {});
 
   // --- chrono de repos (construit une fois, mis à jour toutes les 250 ms)
   const restLabel = h('span', {}, 'Repos');
@@ -232,14 +287,15 @@ function openSession(sid) {
   // --- pré-remplissages
   //   charge : si le modèle en fixe une -> la série précédente de cette séance, sinon la charge du modèle ;
   //            sans charge dans le modèle -> même série de la dernière séance, puis série précédente
-  //   reps   : même série de la dernière séance, puis série précédente, puis reps visées
+  //   reps   : conseil de progression, puis même série de la dernière séance, puis série précédente, puis reps visées
+  //   (la charge visée vient elle-même du conseil de progression quand il y en a un : voir planExercise)
   function placeholders(ex, i, prev) {
     const ps = prev && (prev.sets[i] || prev.sets[prev.sets.length - 1]);
     const before = ex.sets.slice(0, i).reverse().find((x) => x.done);
     let kg;
     if (ex.targetKg != null) kg = before ? before.kg : ex.targetKg;
     else kg = ps && ps.kg != null ? ps.kg : before ? before.kg : null;
-    let reps = ps && ps.reps != null ? ps.reps : before ? before.reps : null;
+    let reps = ex.sugReps != null ? ex.sugReps : ps && ps.reps != null ? ps.reps : before ? before.reps : null;
     if (reps == null) { const m = (ex.targetReps || '').match(/\d+/); if (m) reps = +m[0]; }
     return { kg, reps };
   }
@@ -275,9 +331,40 @@ function openSession(sid) {
     });
   }
 
+  // échauffement : liste à part (ex.warmup), jamais comptée dans le volume, les records ni la progression ; effacée à la fin
+  function warmupBlock(ex) {
+    const w = ex.warmup;
+    if (!w || !w.length) return null;
+    return h('div', { class: 'warm' },
+      h('div', { class: 'row between' }, h('span', { class: 'muted small' }, 'Échauffement'),
+        h('button', { class: 'linkbtn', onclick: () => { delete ex.warmup; store.save(); render(); } }, 'Retirer')),
+      w.map((x, i) => h('div', { class: 'setrow warmrow' + (x.done ? ' done' : '') },
+        h('span', { class: 'idx' }, 'É' + (i + 1)),
+        h('span', { class: 'wv' }, fmtNum(x.kg) + ' kg'),
+        h('span', { class: 'wv' }, '× ' + x.reps),
+        h('span', {}),
+        h('button', { class: 'check' + (x.done ? ' on' : ''), 'aria-label': 'Valider la série d\'échauffement', onclick: () => { x.done = !x.done; store.save(); render(); } }, '✓'))));
+  }
+  // charge de la première série de travail (saisie ou pré-remplie)
+  const workKg = (ex, prev) => (ex.sets[0].kg != null ? ex.sets[0].kg : placeholders(ex, 0, prev).kg);
+  // disques de la prochaine série à faire (échauffement compris), pour les exercices à la barre
+  function platesLine(ex, prev) {
+    if (barOf(ex.exId) == null) return null;
+    const w = (ex.warmup || []).find((x) => !x.done);
+    let kg = w && w.kg;
+    if (!w) {
+      const i = ex.sets.findIndex((x) => !x.done);
+      if (i < 0) return null;
+      kg = ex.sets[i].kg != null ? ex.sets[i].kg : placeholders(ex, i, prev).kg;
+    }
+    const txt = kg > 0 && plateText(kg, ex.exId);
+    return txt ? h('div', { class: 'plates' }, h('span', { class: 'plates-k' }, fmtNum(kg) + ' kg'), txt) : null;
+  }
+
   let flags = new Map();
   function exerciseCard(ex, ei) {
     const prev = lastPerf(ex.exId);
+    const canWarm = !ex.warmup && ex.sets.length && !ex.sets[0].done && warmupSets(workKg(ex, prev), ex.exId).length > 0;
     return h('div', { class: 'card' },
       h('div', { class: 'row between' },
         h('div', { class: 'grow' }, h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId))),
@@ -286,7 +373,9 @@ function openSession(sid) {
       prev && h('div', { class: 'muted small' }, 'Dernière fois (' + new Date(prev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ') : ' + prev.sets.map(setText).join(' · ')),
       prev && prev.note && h('div', { class: 'muted small' }, 'Note précédente : ' + prev.note),
       (ex.targetReps || ex.targetKg != null) && h('div', { class: 'muted small' }, 'Objectif : ' + ex.sets.length + ' × ' + (ex.targetReps || '?') + (ex.targetKg != null ? ' @ ' + fmtNum(ex.targetKg) + ' kg' : '')),
+      ex.why && h('div', { class: 'hint' }, h('b', {}, 'Conseil : ' + suggText({ kg: ex.targetKg, reps: ex.sugReps }) + '. '), ex.why),
 
+      warmupBlock(ex),
       h('div', { class: 'setrow head' }, h('span', {}, 'Série'), h('span', {}, 'kg'), h('span', {}, 'Reps'), h('span', {}, 'RIR'), h('span', {})),
       ex.sets.map((st, i) => {
         const ph = placeholders(ex, i, prev);
@@ -301,10 +390,12 @@ function openSession(sid) {
           rec && h('div', { class: 'pr small' }, '🏆 ' + prText(rec, st)),
         ];
       }),
+      platesLine(ex, prev),
       h('textarea', { class: 'note', rows: 1, maxLength: NOTE_MAX, placeholder: 'Note (sensations, réglage de machine…)', value: ex.note || '', oninput: (e) => { if (e.target.value) ex.note = e.target.value; else delete ex.note; store.save(); } }),
-      h('div', { class: 'row' },
+      h('div', { class: 'row wrap' },
         h('button', { class: 'btn sm', onclick: () => { ex.sets.push(newSet()); store.save(); render(); } }, '+ Série'),
         h('button', { class: 'btn sm', disabled: ex.sets.length <= 1, onclick: () => { const last = ex.sets[ex.sets.length - 1]; if (last.done && !confirm('Supprimer la dernière série (déjà validée) ?')) return; ex.sets.pop(); store.save(); render(); } }, '− Série'),
+        canWarm && h('button', { class: 'btn sm', onclick: () => { ex.warmup = warmupSets(workKg(ex, prev), ex.exId); store.save(); render(); } }, '+ Échauffement'),
         h('span', { class: 'grow' }),
         h('label', { class: 'rest' }, h('span', { class: 'muted small' }, 'Repos '), h('input', { type: 'text', inputMode: 'numeric', class: 'num sm', value: ex.restSec, oninput: (e) => { ex.restSec = parseInt(e.target.value) || 0; store.save(); } }), h('span', { class: 'muted small' }, ' s'))));
   }
@@ -312,13 +403,19 @@ function openSession(sid) {
   function render() {
     const scroll = ov.el.scrollTop;
     flags = prFlags(s);
-    setChildren(body,
+    const total = s.exercises.reduce((n, ex) => n + ex.sets.length, 0);
+    const done = s.exercises.reduce((n, ex) => n + ex.sets.filter((x) => x.done).length, 0);
+    setChildren(head,
       h('div', { class: 'row between' },
-        h('div', { class: 'grow' }, h('h1', {}, s.name), elapsed),
+        h('div', { class: 'grow' }, h('h1', {}, s.name), h('div', { class: 'muted' }, elapsed, ' · ' + done + '/' + total + ' séries')),
         h('button', { class: 'btn', onclick: () => ov.close() }, 'Réduire'),
         h('button', { class: 'btn primary', onclick: finish }, 'Terminer')),
+      h('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': done, 'aria-label': 'Séries validées' },
+        h('div', { style: 'width:' + (total ? (done / total) * 100 : 0) + '%' })));
+    setChildren(body,
       h('div', { class: 'card' },
         h('b', {}, 'Groupes ciblés'),
+        s.exercises.length > 0 && sessionMap(s),
         muscleChips(s.muscles || [], (m) => { s.muscles = m; store.save(); render(); }),
         !cleanMuscles(s.muscles).length && h('p', { class: 'muted small' }, 'Aucun groupe choisi : ' + (groupsOfExercises(s.exercises).length ? 'ceux de tes exercices seront utilisés (' + groupLabels(groupsOfExercises(s.exercises)) + ').' : 'ils seront déduits de tes exercices.'))),
       s.exercises.map(exerciseCard),
@@ -340,7 +437,7 @@ function openSession(sid) {
     const msg = pending ? pending + ' série(s) non validée(s) seront ignorées. Terminer la séance ?' : 'Terminer la séance ?';
     if (!confirm(msg)) return;
     const recordExercises = new Set([...prFlags(s).keys()].map((k) => k.split(':')[0])).size;
-    s.exercises.forEach((ex) => (ex.sets = ex.sets.filter((x) => x.done)));
+    s.exercises.forEach((ex) => { ex.sets = ex.sets.filter((x) => x.done); delete ex.warmup; });
     s.exercises = s.exercises.filter((ex) => ex.sets.length);
     s.muscles = cleanMuscles(s.muscles).length ? cleanMuscles(s.muscles) : workedGroups(s); // sans choix : groupes réellement travaillés
     s.end = Date.now();
@@ -364,7 +461,7 @@ function openSession(sid) {
     refreshView();
   }
 
-  ov.el.append(body, restBar);
+  ov.el.append(head, body, restBar);
   render();
 }
 
@@ -392,6 +489,7 @@ function viewSession(sid) {
     noteBox(s, 'Note de séance…', 2),
     h('div', { class: 'card' },
       h('b', {}, 'Groupes ciblés'),
+      sessionMap(s),
       muscleChips(sessionMuscles(s), (m) => { s.muscles = m; s.updatedAt = Date.now(); store.save(); syncSoon(); }),
       h('p', { class: 'muted small' }, 'Modifie-les pour corriger le calendrier.')),
     s.exercises.map((ex, ei) => h('div', { class: 'card' },

@@ -14,37 +14,54 @@ const dayKeyOf = (t) => { const d = new Date(t); return d.getFullYear() + '-' + 
 const dayNum = (key) => { const [y, m, d] = key.split('-').map(Number); return Date.UTC(y, m - 1, d) / 864e5; };
 const finishedSessions = () => store.data.sessions.filter((s) => s.end);
 
-// Par groupe : dernier jour travaillé (numéro de jour) et séries validées sur les 7 derniers jours.
+// Récupération : chaque séance fixe pour un groupe un besoin de repos qui dépend du nombre de séries validées
+// (muscle principal) : 24 h + 8 h par série, plafonné à 72 h. Le groupe est prêt quand le plus tardif de ces besoins est écoulé.
+const recoveryHours = (sets) => Math.min(72, 24 + 8 * sets);
+
+// Par groupe : dernier jour travaillé (numéro de jour), séries validées sur les 7 derniers jours, état de récupération
+//   { last, days, sets7, readyAt (ms), need (h), left (h restantes), pct (0-1), recovering }
 // Basé sur les exercices RÉELLEMENT faits (muscle principal), pas sur les groupes déclarés.
 function groupStats() {
-  const today = dayNum(dayKeyOf(Date.now()));
-  const stats = Object.fromEntries(MUSCLE_IDS.map((id) => [id, { last: null, sets7: 0 }]));
+  const now = Date.now();
+  const today = dayNum(dayKeyOf(now));
+  const stats = Object.fromEntries(MUSCLE_IDS.map((id) => [id, { last: null, sets7: 0, readyAt: 0, need: 0 }]));
   for (const s of finishedSessions()) {
     const dn = dayNum(dayKeyOf(s.start));
+    const perGroup = {};
     for (const ex of s.exercises) {
       const n = ex.sets.filter((x) => x.done).length;
       if (!n) continue;
-      for (const g of exerciseGroups(ex.exId)) {
-        const st = stats[g];
-        if (st.last === null || dn > st.last) st.last = dn;
-        if (today - dn >= 0 && today - dn < 7) st.sets7 += n;
-      }
+      for (const g of exerciseGroups(ex.exId)) perGroup[g] = (perGroup[g] || 0) + n;
+    }
+    for (const [g, n] of Object.entries(perGroup)) {
+      const st = stats[g];
+      if (st.last === null || dn > st.last) st.last = dn;
+      if (today - dn >= 0 && today - dn < 7) st.sets7 += n;
+      const need = recoveryHours(n), readyAt = s.end + need * 36e5;
+      if (readyAt > st.readyAt) { st.readyAt = readyAt; st.need = need; }
     }
   }
-  for (const id of MUSCLE_IDS) stats[id].days = stats[id].last === null ? null : today - stats[id].last;
+  for (const id of MUSCLE_IDS) {
+    const st = stats[id];
+    st.days = st.last === null ? null : today - st.last;
+    st.left = Math.max(0, (st.readyAt - now) / 36e5);
+    st.recovering = st.left > 0;
+    st.pct = st.need ? Math.min(1, 1 - st.left / st.need) : 1;
+  }
   return stats;
 }
 
-function recoveryStatus(days) {
-  if (days === null) return { icon: '·', label: 'Pas encore travaillé' };
-  if (days <= 1) return { icon: '⏳', label: 'En récupération' };
-  if (days <= 3) return { icon: '✓', label: 'Prêt' };
-  return { icon: '↑', label: 'À travailler' };
+const hoursText = (hh) => (hh >= 24 ? Math.round(hh / 24 * 10) / 10 + ' j' : Math.ceil(hh) + ' h').replace('.', ',');
+function recoveryStatus(st) {
+  if (st.days === null) return { icon: '·', label: 'Jamais fait', kind: 'never' };
+  if (st.recovering) return { icon: '⏳', label: 'Encore ' + hoursText(st.left), kind: 'rec' };
+  if (st.days <= 3) return { icon: '✓', label: 'Prêt', kind: 'ready' };
+  return { icon: '↑', label: 'À travailler', kind: 'todo' };
 }
 const daysText = (d) => (d === null ? '—' : d === 0 ? "aujourd'hui" : d === 1 ? 'hier' : 'il y a ' + d + ' j');
 
-// priorité d'un groupe : plus il est resté au repos, plus il est prioritaire ; en récupération = 0 ; jamais travaillé = moyen
-const groupPriority = (days) => (days === null ? 5 : days < 2 ? 0 : Math.min(days, 14));
+// priorité d'un groupe : en récupération = 0 ; sinon plus il est resté au repos, plus il est prioritaire ; jamais travaillé = moyen
+const groupPriority = (st) => (st.days === null ? 5 : st.recovering ? 0 : Math.max(2, Math.min(st.days, 14)));
 
 function renderCalendar(root) {
   const now = new Date();
@@ -122,7 +139,7 @@ function suggestionCard(stats, nSessions) {
   const card = h('div', { class: 'card' }, h('b', {}, 'Prochaine séance suggérée'));
   if (!nSessions) { card.append(h('p', { class: 'muted' }, 'Termine ta première séance pour recevoir des suggestions.')); return card; }
 
-  const prio = MUSCLE_IDS.map((id) => ({ id, days: stats[id].days, score: groupPriority(stats[id].days) }))
+  const prio = MUSCLE_IDS.map((id) => ({ id, days: stats[id].days, score: groupPriority(stats[id]) }))
     .filter((g) => g.score >= 2).sort((a, b) => b.score - a.score).slice(0, 3);
   if (!prio.length) { card.append(h('p', { class: 'muted' }, 'Tout est en récupération : repose-toi, ou travaille ce que tu veux.')); return card; }
 
@@ -132,7 +149,7 @@ function suggestionCard(stats, nSessions) {
 
   // modèle qui correspond le mieux : moyenne des priorités de ses groupes
   const best = store.data.templates
-    .map((t) => { const gs = templateGroups(t); return { t, gs, score: gs.length ? gs.reduce((a, id) => a + groupPriority(stats[id].days), 0) / gs.length : 0 }; })
+    .map((t) => { const gs = templateGroups(t); return { t, gs, score: gs.length ? gs.reduce((a, id) => a + groupPriority(stats[id]), 0) / gs.length : 0 }; })
     .filter((x) => x.score >= 2).sort((a, b) => b.score - a.score)[0];
   if (best) card.append(h('p', {}, 'Modèle conseillé : ', h('b', {}, best.t.name), h('span', { class: 'muted small' }, '  (' + groupLabels(best.gs) + ')')));
 
@@ -145,18 +162,31 @@ function suggestionCard(stats, nSessions) {
 
 // ---------- récupération par groupe ----------
 
+const RECOVERY_COLORS = { rec: 'var(--warn)', ready: 'var(--ok)', todo: 'var(--accent)' };
 function recoveryCard(stats) {
   const rows = MUSCLE_IDS.map((id) => ({ id, days: stats[id].days }))
     .sort((a, b) => (b.days === null ? -1 : b.days) - (a.days === null ? -1 : a.days)); // les plus délaissés d'abord, jamais travaillés en dernier
   const never = rows.filter((r) => r.days === null), done = rows.filter((r) => r.days !== null);
+  const fills = {};
+  for (const id of MUSCLE_IDS) {
+    const st = recoveryStatus(stats[id]);
+    if (st.kind !== 'never') fills[id] = { color: RECOVERY_COLORS[st.kind], op: st.kind === 'rec' ? 0.35 + 0.65 * (1 - stats[id].pct) : 0.85 };
+  }
   return h('div', { class: 'card' },
     h('b', {}, 'Récupération par groupe'),
-    h('p', { class: 'muted small' }, 'Calculé d\'après les exercices réellement faits. ⏳ 0-1 jour · ✓ 2-3 jours · ↑ 4 jours et plus.'),
+    bodyMap(fills, { label: 'Récupération : ' + MUSCLE_IDS.filter((id) => fills[id]).map((id) => groupLabel(id) + ' ' + recoveryStatus(stats[id]).label).join(', ') }),
+    h('div', { class: 'cal-legend muted small' },
+      h('span', {}, h('span', { class: 'dot', style: 'background:var(--warn)' }), ' En récupération'),
+      h('span', {}, h('span', { class: 'dot', style: 'background:var(--ok)' }), ' Prêt'),
+      h('span', {}, h('span', { class: 'dot', style: 'background:var(--accent)' }), ' À travailler')),
+    h('p', { class: 'muted small' }, 'Calculé d\'après les séries réellement faites : chaque séance demande 24 h de repos au groupe, plus 8 h par série (72 h au plus).'),
     [...done, ...never].map(({ id, days }) => {
-      const st = recoveryStatus(days);
-      return h('div', { class: 'histset' },
-        h('span', {}, h('span', { class: 'dot f-' + groupById[id].family }), ' ' + groupLabel(id)),
-        h('span', {}, h('span', { class: 'muted small' }, daysText(days) + '  '), st.icon + ' ' + st.label));
+      const st = recoveryStatus(stats[id]);
+      return h('div', { class: 'rec-row' },
+        h('div', {}, h('span', { class: 'dot f-' + groupById[id].family }), ' ' + groupLabel(id), h('div', { class: 'muted small' }, daysText(days))),
+        h('div', { class: 'wk-bar', role: 'img', 'aria-label': st.kind === 'never' ? 'Pas encore travaillé' : 'Récupéré à ' + Math.round(stats[id].pct * 100) + ' %' },
+          st.kind !== 'never' && h('div', { class: 'wk-fill', style: 'width:' + Math.round(stats[id].pct * 100) + '%;background:' + RECOVERY_COLORS[st.kind] })),
+        h('span', { class: 'rec-st' }, st.icon + ' ' + st.label));
     }));
 }
 

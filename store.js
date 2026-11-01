@@ -3,6 +3,7 @@
 //   sessions  : séances réalisées   { id, name, templateId, start, end, exercises:[{exId, restSec, targetReps, sets:[{kg, reps, rir, done, ts}]}] }
 //   activeId  : id de la séance en cours (ou null)
 //   rest      : chrono de repos en cours { endsAt, total, beeped } (ou null)
+//   gear      : matériel de cet appareil (barres, disques), non synchronisé : voir plates.js
 const KEY = 'muscu.v1';
 
 const store = {
@@ -25,6 +26,7 @@ const store = {
     d.tombstones.weights = d.tombstones.weights || {};
     d.nameOverrides = cleanOverrides(d.nameOverrides);
     d.bodyweight = cleanWeights(d.bodyweight);
+    d.gear = cleanGear(d.gear);
     return d;
   },
 
