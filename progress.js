@@ -28,11 +28,11 @@ function exHistory(exId) {
 
 let progressView = 'exos'; // 'exos' | 'records' | 'poids'
 
-// Les trois mouvements de base, avec leurs variantes à la barre qui comptent pour le même record
-// (le soulevé de terre roumain ou jambes tendues n'en fait pas partie).
+// Les trois mouvements de base, avec leurs variantes qui comptent pour le même record
+// (barre hexagonale comprise ; le soulevé de terre roumain ou jambes tendues n'en fait pas partie).
 const BIG3 = [
   { label: 'Squat', ids: ['Barbell_Squat', 'Barbell_Full_Squat', 'Olympic_Squat', 'Wide_Stance_Barbell_Squat'] },
-  { label: 'Soulevé de terre', ids: ['Barbell_Deadlift', 'Sumo_Deadlift'] },
+  { label: 'Soulevé de terre', ids: ['Barbell_Deadlift', 'Sumo_Deadlift', 'Trap_Bar_Deadlift'] },
   { label: 'Développé couché', ids: ['Barbell_Bench_Press_-_Medium_Grip', 'Bench_Press_-_Powerlifting', 'Wide-Grip_Barbell_Bench_Press'] },
 ];
 // meilleure charge et meilleur 1RM estimé parmi les variantes -> { kg, e1rm, id } (id : exercice à ouvrir)
