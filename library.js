@@ -70,8 +70,7 @@ function mountLibrary(root, { onPick, title, onClose } = {}) {
     fEquip = filterSelect('Matériel', TR.equipment, uniq(lib.exercises.map((e) => (e.equipment === null ? 'null' : e.equipment))), reset);
     fCat = filterSelect('Catégorie', TR.category, uniq(lib.exercises.map((e) => e.category)), reset);
     head.append(
-      title && h('div', { class: 'row between' }, h('h1', {}, title), h('button', { class: 'btn', onclick: onClose }, 'Fermer')),
-      !title && h('h1', {}, 'Exercices'),
+      title ? h('div', { class: 'row between' }, h('h1', {}, title), h('button', { class: 'btn', onclick: onClose }, 'Fermer')) : h('h1', {}, 'Exercices'),
       q,
       h('div', { class: 'filters' }, fMuscle, fEquip, fCat),
       count

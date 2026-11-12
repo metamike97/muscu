@@ -28,7 +28,8 @@ function workHistory(exId) {
     .filter((s) => s.end)
     .sort((a, b) => b.start - a.start)
     .flatMap((s) => {
-      const sets = s.exercises.filter((e) => e.exId === exId).flatMap((e) => e.sets.filter((x) => x.done));
+      // les circuits chronométrés (HIIT, AMRAP, EMOM) ne servent pas de référence de charge
+      const sets = s.exercises.filter((e) => e.exId === exId && !inTimedCircuit(s, e)).flatMap((e) => e.sets.filter((x) => x.done));
       if (!sets.length) return [];
       const kg = Math.max(...sets.map((x) => x.kg || 0));
       return [{ kg, reps: sets.filter((x) => (x.kg || 0) === kg).map((x) => x.reps || 0) }];

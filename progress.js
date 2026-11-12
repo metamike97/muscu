@@ -28,12 +28,43 @@ function exHistory(exId) {
 
 let progressView = 'exos'; // 'exos' | 'records' | 'poids'
 
+// Les trois mouvements de base, avec leurs variantes à la barre qui comptent pour le même record
+// (le soulevé de terre roumain ou jambes tendues n'en fait pas partie).
+const BIG3 = [
+  { label: 'Squat', ids: ['Barbell_Squat', 'Barbell_Full_Squat', 'Olympic_Squat', 'Wide_Stance_Barbell_Squat'] },
+  { label: 'Soulevé de terre', ids: ['Barbell_Deadlift', 'Sumo_Deadlift'] },
+  { label: 'Développé couché', ids: ['Barbell_Bench_Press_-_Medium_Grip', 'Bench_Press_-_Powerlifting', 'Wide-Grip_Barbell_Bench_Press'] },
+];
+// meilleure charge et meilleur 1RM estimé parmi les variantes -> { kg, e1rm, id } (id : exercice à ouvrir)
+function big3Best(ids) {
+  let kg = null, est = null;
+  for (const id of ids) {
+    const r = exerciseRecords(id);
+    if (r.kg && (!kg || r.kg.v > kg.v)) kg = { ...r.kg, id };
+    if (r.e1rm && (!est || r.e1rm.v > est.v)) est = { ...r.e1rm, id };
+  }
+  return { kg, e1rm: est, id: kg ? kg.id : null };
+}
+function big3Card() {
+  const bests = BIG3.map((b) => ({ ...b, best: big3Best(b.ids) }));
+  const total = bests.reduce((a, b) => a + (b.best.kg ? b.best.kg.v : 0), 0);
+  return h('div', { class: 'big3' },
+    bests.map((b) => h(b.best.id ? 'button' : 'div', { class: 'tile big3-t', type: b.best.id ? 'button' : null, onclick: b.best.id ? () => openProgress(b.best.id) : null },
+      h('div', { class: 'muted small' }, b.label),
+      h('div', { class: 'big3-v' }, b.best.kg ? fmtNum(b.best.kg.v) + ' kg' : '—'),
+      h('div', { class: 'muted small' }, b.best.kg ? '× ' + b.best.kg.reps + ' · ' + new Date(b.best.kg.t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : 'pas encore fait'),
+      b.best.e1rm && h('div', { class: 'small big3-e' }, '1RM ≈ ' + Math.round(b.best.e1rm.v) + ' kg'))),
+    total > 0 && h('div', { class: 'big3-total muted small' }, 'Total des trois : ', h('b', {}, fmtNum(round1(total)) + ' kg')));
+}
+
 // Onglet Progrès : Exercices (graphiques), Records, Poids de corps
 function renderProgressTab(root) {
   const content = h('div');
   const views = [['exos', 'Exercices'], ['records', 'Records'], ['poids', 'Poids']];
   root.replaceChildren(h('div', { class: 'pad' },
     h('h1', {}, 'Progrès'),
+    h('h2', {}, '🏆 Records principaux'),
+    big3Card(),
     h('div', { class: 'seg' }, views.map(([k, l]) => h('button', { class: 'seg-b' + (progressView === k ? ' on' : ''), onclick: () => { progressView = k; renderProgressTab(root); } }, l))),
     content));
   if (progressView === 'records') renderRecordsList(content);

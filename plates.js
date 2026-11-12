@@ -1,15 +1,20 @@
 // Matériel, disques et échauffement.
 // Le matériel (poids des barres, disques possédés) est un réglage propre à CET appareil : ni synchronisé ni exporté.
-//   store.data.gear = { bar, ez, plates:[kg…] } (disques en paires, nombre illimité)
+//   store.data.gear = { bar, ez, plates:[kg…], warmup } (disques en paires, nombre illimité ;
+//   warmup : nombre de séries d'échauffement par défaut, 0 = automatique selon la charge)
 
 const PLATES_ALL = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5];
-const GEAR_DEFAULT = { bar: 20, ez: 10, plates: [25, 20, 15, 10, 5, 2.5, 1.25] };
+const GEAR_DEFAULT = { bar: 20, ez: 10, plates: [25, 20, 15, 10, 5, 2.5, 1.25], warmup: 0 };
+const WARMUP_MAX = 6;
 
 function cleanGear(g) {
   const ok = (v, lo, hi, def) => (Number.isFinite(v) && v >= lo && v <= hi ? v : def);
   g = g && typeof g === 'object' ? g : {};
   const plates = Array.isArray(g.plates) ? PLATES_ALL.filter((p) => g.plates.includes(p)) : GEAR_DEFAULT.plates;
-  return { bar: ok(g.bar, 0, 50, GEAR_DEFAULT.bar), ez: ok(g.ez, 0, 50, GEAR_DEFAULT.ez), plates: plates.length ? plates : GEAR_DEFAULT.plates };
+  return {
+    bar: ok(g.bar, 0, 50, GEAR_DEFAULT.bar), ez: ok(g.ez, 0, 50, GEAR_DEFAULT.ez), plates: plates.length ? plates : GEAR_DEFAULT.plates,
+    warmup: Number.isInteger(g.warmup) ? ok(g.warmup, 0, WARMUP_MAX, 0) : 0,
+  };
 }
 
 const equipOf = (exId) => (lib.byId[exId] && lib.byId[exId].equipment) || null;
@@ -45,12 +50,27 @@ function plateText(total, exId) {
   return Math.abs(sp.kg - total) > 1e-6 ? body + ' (≈ ' + fmtNum(sp.kg) + ' kg)' : body;
 }
 
-// Séries d'échauffement pour une charge de travail : montée progressive, la dernière vers 80 %.
-// À la barre : barre seule d'abord. Rien pour le poids du corps ou les charges trop légères.
-function warmupSets(work, exId) {
+// Nombre de séries d'échauffement cohérent avec la charge de travail (réglage « Auto ») :
+// plus la charge est lourde, plus la montée est longue. Les haltères se comptent par main.
+function autoWarmCount(work, exId) {
+  const eq = equipOf(exId);
+  const steps = eq === 'dumbbell' || eq === 'kettlebells' ? [12, 25] : barOf(exId) != null ? [40, 70, 110, 150] : [40, 80];
+  return 1 + steps.filter((t) => work >= t).length;
+}
+const warmLabel = (n) => (n ? n + ' série' + (n > 1 ? 's' : '') : 'Auto');
+
+// Séries d'échauffement pour une charge de travail : n séries (0 ou absent = automatique), montée de ~40 à ~85 %,
+// répétitions décroissantes de 8 à 3. À la barre (dès 3 séries) : barre seule d'abord. Les charges en double sont fusionnées,
+// donc une charge légère donne moins de séries que demandé. Rien pour le poids du corps.
+function warmupSets(work, exId, n) {
   if (!(work > 0)) return [];
+  n = n > 0 ? n : autoWarmCount(work, exId);
   const bar = barOf(exId), step = loadStep(exId) || 1;
-  const scheme = bar != null ? [[0, 10], [0.4, 8], [0.6, 5], [0.8, 3]] : [[0.5, 8], [0.75, 4]];
+  const withBar = bar != null && n >= 3;
+  const k = withBar ? n - 1 : n; // séries en pourcentage
+  const pcts = k === 1 ? [0.6] : Array.from({ length: k }, (_, i) => 0.4 + (0.45 * i) / (k - 1));
+  const reps = (i) => (k === 1 ? 5 : Math.round(8 - (5 * i) / (k - 1))); // de 8 à 3 reps
+  const scheme = (withBar ? [[0, 10]] : []).concat(pcts.map((p, i) => [p, reps(i)]));
   const out = [];
   for (const [pct, reps] of scheme) {
     const kg = pct === 0 ? bar : Math.max(bar || 0, Math.round((work * pct) / step) * step);
@@ -58,6 +78,21 @@ function warmupSets(work, exId) {
     out.push({ kg, reps, done: false });
   }
   return out;
+}
+
+// Réglages : carte « Échauffement » (nombre de séries par défaut)
+function warmupCard() {
+  const g = store.data.gear;
+  const chips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Séries d\'échauffement par défaut' });
+  const draw = () => setChildren(chips, Array.from({ length: WARMUP_MAX + 1 }, (_, n) => h('button', {
+    type: 'button', class: 'chip' + (g.warmup === n ? ' on' : ''), 'aria-pressed': String(g.warmup === n),
+    onclick: () => { g.warmup = n; store.save(); draw(); },
+  }, n ? String(n) : 'Auto')));
+  draw();
+  return h('div', { class: 'card' },
+    h('b', {}, 'Séries d\'échauffement par défaut'),
+    chips,
+    h('p', { class: 'muted small' }, 'Auto : selon la charge visée (1 série pour une charge légère, jusqu\'à 5 pour un squat lourd). Modifiable aussi pendant la séance. Réglage propre à cet appareil.'));
 }
 
 // Réglages : carte « Matériel »

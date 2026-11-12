@@ -79,6 +79,7 @@ function cleanSession(s) {
   if ('muscles' in c) c.muscles = cleanMuscles(c.muscles);
   if ('updatedAt' in c && !Number.isFinite(c.updatedAt)) delete c.updatedAt;
   c.exercises = (c.exercises || []).map((e) => { const x = { ...e }; cleanNoteOn(x); cleanNumOn(x, 'targetKg', 0, 1000); return x; });
+  if ('groups' in c) { c.groups = cleanGroups(c.groups); normalizeGroups(c); } // supersets et circuits (circuits.js)
   return c;
 }
 function cleanTemplate(t) {
