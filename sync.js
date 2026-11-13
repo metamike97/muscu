@@ -90,7 +90,7 @@ async function writeRemote(doc, sha) {
 }
 
 // ---------- fusion (fonctions pures) ----------
-const emptyDoc = () => ({ version: 1, templates: [], sessions: [], tombstones: { templates: {}, sessions: {}, weights: {} }, nameOverrides: {}, bodyweight: [] });
+const emptyDoc = () => ({ version: 1, templates: [], sessions: [], tombstones: { templates: {}, sessions: {}, weights: {} }, nameOverrides: {}, bodyweight: [], customExercises: [] });
 
 function normDoc(d) {
   const t = (d.tombstones || {});
@@ -102,6 +102,7 @@ function normDoc(d) {
     // champs absents des anciens fichiers distants : vides
     nameOverrides: cleanOverrides(d.nameOverrides),
     bodyweight: cleanWeights(d.bodyweight),
+    customExercises: cleanCustoms(d.customExercises),
   };
 }
 
@@ -146,6 +147,7 @@ function mergeDocs(a, b) {
     tombstones: tomb,
     nameOverrides: mergeOverrides(a.nameOverrides, b.nameOverrides),
     bodyweight: [...weights.values()].filter((w) => !(tomb.weights[w.id] >= w.updatedAt)).sort((x, y) => x.t - y.t || byId(x, y)),
+    customExercises: mergeCustoms(a.customExercises, b.customExercises), // jamais supprimés (masqués), donc pas de tombstones
   };
 }
 
@@ -157,6 +159,7 @@ const localDoc = () => ({
   tombstones: store.data.tombstones,
   nameOverrides: store.data.nameOverrides,
   bodyweight: store.data.bodyweight,
+  customExercises: store.data.customExercises,
 });
 
 function applyDoc(doc) {
@@ -167,7 +170,8 @@ function applyDoc(doc) {
   d.tombstones = doc.tombstones;
   d.nameOverrides = doc.nameOverrides;
   d.bodyweight = doc.bodyweight;
-  lib.refreshOverrides(); // recherche à jour avec les noms reçus des autres appareils
+  d.customExercises = doc.customExercises;
+  lib.refreshCustoms(); // recherche à jour avec les exercices et les noms reçus des autres appareils
   store.save();
 }
 

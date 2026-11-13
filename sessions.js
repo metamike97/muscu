@@ -454,7 +454,7 @@ function openSession(sid) {
     return h('div', { class: 'card' + (g ? ' in-group' : '') },
       h('div', { class: 'row between' },
         tag && h('span', { class: 'gtag' }, tag),
-        h('div', { class: 'grow' }, h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId))),
+        h('div', { class: 'grow' }, h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId)), customSteps(ex.exId)),
         h('button', { class: 'btn sm', onclick: () => editGroup(s, ex, render) }, 'Éditer'),
         h('button', { class: 'btn sm', 'aria-label': 'Retirer', onclick: () => {
           if (isTimed(g) && timerStarted(g) && !g.timer.ended) return toast('Arrête le circuit avant d\'en retirer un exercice');

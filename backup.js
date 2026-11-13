@@ -14,6 +14,7 @@ function buildBackup() {
       sessions: d.sessions.filter((s) => s.end), // la séance en cours n'est pas exportée
       nameOverrides: d.nameOverrides || {}, // noms d'exercices corrigés
       bodyweight: d.bodyweight || [],
+      customExercises: d.customExercises || [], // exercices perso
     },
   };
 }
@@ -70,6 +71,7 @@ function parseBackup(text) {
     skipped: templates.length - validT.length + sessions.length - validS.length,
     deleted: validT.length - goodT.length + validS.length - goodS.length + allW.length - weights.length,
     nameOverrides: cleanOverrides(obj.data.nameOverrides),
+    customs: cleanCustoms(obj.data.customExercises),
   };
 }
 
@@ -90,11 +92,11 @@ async function importData(file) {
   let b;
   try { b = parseBackup(await file.text()); } catch (e) { return alert(e.message); }
   const names = Object.keys(b.nameOverrides).length;
-  if (!b.sessions.length && !b.templates.length && !b.weights.length && !names) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
+  if (!b.sessions.length && !b.templates.length && !b.weights.length && !names && !b.customs.length) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
   const s = mergeById(store.data.sessions, b.sessions);
   const t = mergeById(store.data.templates, b.templates);
   const w = mergeById(store.data.bodyweight, b.weights);
-  const msg = 'Importer ' + b.sessions.length + ' séance(s), ' + b.templates.length + ' modèle(s), ' + b.weights.length + ' pesée(s) et ' + names + ' nom(s) d\'exercice corrigé(s) ?\n' +
+  const msg = 'Importer ' + b.sessions.length + ' séance(s), ' + b.templates.length + ' modèle(s), ' + b.weights.length + ' pesée(s), ' + b.customs.length + ' exercice(s) perso et ' + names + ' nom(s) d\'exercice corrigé(s) ?\n' +
     '• Nouveaux : ' + (s.added + t.added + w.added) + '\n• Déjà présents (remplacés si plus récents) : ' + (s.updated + t.updated + w.updated) +
     (b.skipped ? '\n• Ignorés (invalides) : ' + b.skipped : '') +
     (b.deleted ? '\n• Ignorés (supprimés depuis) : ' + b.deleted : '') + '\n\nRien n\'est supprimé de ce qui existe déjà.';
@@ -103,7 +105,8 @@ async function importData(file) {
   store.data.templates = t.list;
   store.data.bodyweight = w.list;
   store.data.nameOverrides = mergeOverrides(store.data.nameOverrides, b.nameOverrides);
-  lib.refreshOverrides();
+  store.data.customExercises = mergeCustoms(store.data.customExercises, b.customs);
+  lib.refreshCustoms();
   store.save();
   toast('Import terminé');
   refreshView();
@@ -132,6 +135,8 @@ function renderSettings(root) {
     persistLine,
     h('h2', {}, 'Synchronisation'),
     renderSyncCard(),
+    h('h2', {}, 'Mes exercices'),
+    customListCard(),
     h('h2', {}, 'Matériel'),
     gearCard(),
     h('h2', {}, 'Échauffement'),

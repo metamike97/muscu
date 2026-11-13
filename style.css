@@ -275,3 +275,12 @@ input.num.sugg::placeholder { color: var(--accent); opacity: 0.75; font-style: i
 .ctimer-t { display: block; font-size: 2.4rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .ctimer-big { font-size: 1.8rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .ctimer-big.hit { color: var(--ok-text); }
+
+/* exercices perso */
+.tag.perso { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.libhead .newex { margin-top: 8px; }
+.steps { margin-top: 6px; font-size: 0.85rem; }
+.steps summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.steps ol { margin: 6px 0 0; padding-left: 20px; }
+.steps li { display: list-item; background: none; border: 0; padding: 2px 0; margin: 0; border-radius: 0; }
+.chip:disabled { opacity: 0.35; }

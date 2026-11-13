@@ -14,7 +14,30 @@ lib.override = (id) => {
   return o && o.name ? o.name : null;
 };
 lib.fr = (id) => lib.override(id) || lib.frDefault(id);
-lib.en = (id) => (lib.byId[id] && lib.byId[id].name) || '';
+lib.en = (id) => (lib.byId[id] && !lib.byId[id].custom && lib.byId[id].name) || ''; // les exercices perso n'ont pas de nom anglais
+// texte cherchable d'un exercice : noms FR (d'origine) + EN, muscles, matériel, catégorie (FR + EN)
+const hayOf = (e) => norm([
+  lib.namesFr[e.id] || e.name, e.name,
+  ...e.primaryMuscles.map((m) => trMuscle(m) + ' ' + m),
+  trEquip(e.equipment) + ' ' + (e.equipment || ''),
+  trCat(e.category) + ' ' + e.category,
+  e.custom ? 'perso' : '',
+].join(' '));
+
+// exercices perso (customex.js) : en tête de liste ; les masqués restent connus (byId) pour l'historique
+lib.refreshCustoms = () => {
+  lib.exercises = lib.exercises.filter((e) => !e.custom);
+  const customs = (store.data && store.data.customExercises) || [];
+  for (const c of customs) {
+    const e = { ...c, custom: true };
+    lib.namesFr[e.id] = e.name;
+    e.baseHay = hayOf(e);
+    lib.byId[e.id] = e;
+  }
+  lib.exercises = [...customs.filter((c) => !c.hidden).map((c) => lib.byId[c.id]), ...lib.exercises];
+  lib.refreshOverrides();
+};
+
 // la recherche trouve le nom d'origine, l'anglais ET le nom corrigé
 lib.refreshOverrides = () => {
   for (const e of lib.exercises) {
@@ -31,13 +54,7 @@ lib.ready = (async () => {
   lib.namesFr = fr;
   lib.exercises = ex.map((e) => ({
     ...e,
-    // tout ce qui est cherchable : noms FR (d'origine) + EN, muscles, matériel, catégorie (FR + EN)
-    baseHay: norm([
-      lib.namesFr[e.id] || e.name, e.name,
-      ...e.primaryMuscles.map((m) => trMuscle(m) + ' ' + m),
-      trEquip(e.equipment) + ' ' + (e.equipment || ''),
-      trCat(e.category) + ' ' + e.category,
-    ].join(' ')),
+    baseHay: hayOf(e),
   }));
   lib.exercises.forEach((e) => (lib.byId[e.id] = e));
   lib.refreshOverrides(); // (store.data peut ne pas être chargé : alors rien à ajouter, app.js rappellera)
@@ -71,6 +88,7 @@ function mountLibrary(root, { onPick, title, onClose } = {}) {
     fCat = filterSelect('Catégorie', TR.category, uniq(lib.exercises.map((e) => e.category)), reset);
     head.append(
       title ? h('div', { class: 'row between' }, h('h1', {}, title), h('button', { class: 'btn', onclick: onClose }, 'Fermer')) : h('h1', {}, 'Exercices'),
+      h('button', { class: 'btn sm newex', onclick: () => editCustomExercise(null, (id) => { if (onPick) onPick(id); reset(); }) }, '+ Créer un exercice'),
       q,
       h('div', { class: 'filters' }, fMuscle, fEquip, fCat),
       count
@@ -99,8 +117,8 @@ function mountLibrary(root, { onPick, title, onClose } = {}) {
       const li = h('li', { class: onPick ? 'pick' : '' },
         h('div', { class: 'grow' },
           h('div', { class: 'fr' }, fr),
-          fr !== e.name && h('div', { class: 'en' }, e.name),
-          h('div', { class: 'tags' }, [...e.primaryMuscles.map(trMuscle), trEquip(e.equipment)].map((t) => h('span', { class: 'tag' }, t)))
+          fr !== e.name && !e.custom && h('div', { class: 'en' }, e.name),
+          h('div', { class: 'tags' }, e.custom && h('span', { class: 'tag perso' }, 'Perso'), [...e.primaryMuscles.map(trMuscle), trEquip(e.equipment)].map((t) => h('span', { class: 'tag' }, t)))
         ),
         onPick ? h('span', { class: 'plus' }, '+') : h('span', { class: 'edit', 'aria-label': 'Corriger le nom' }, '✎')
       );
@@ -119,6 +137,7 @@ function mountLibrary(root, { onPick, title, onClose } = {}) {
 
 // Corriger le nom français d'un exercice (synchronisé entre appareils). onDone() est appelé après enregistrement.
 function editExerciseName(exId, onDone) {
+  if (lib.byId[exId] && lib.byId[exId].custom) return editCustomExercise(exId, onDone); // exercice perso : son propre éditeur
   const ov = overlay();
   const original = lib.frDefault(exId);
   const hasOverride = !!lib.override(exId);
