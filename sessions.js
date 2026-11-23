@@ -130,57 +130,6 @@ function editTemplate(id) {
   const draft = existing ? JSON.parse(JSON.stringify(existing)) : { id: uid(), name: '', exercises: [], muscles: [] };
   const ov = overlay();
 
-  // exercice ajouté pendant la séance : autant de séries et le même repos que la dernière fois (les charges sont rappelées)
-  function addExercise(exId) {
-    const prev = lastPerf(exId);
-    const last = prev && store.data.sessions.filter((x) => x.end).sort((a, b) => b.start - a.start).flatMap((x) => x.exercises).find((e) => e.exId === exId);
-    s.exercises.push({ exId, restSec: last && last.restSec != null ? last.restSec : DEFAULT_REST, targetReps: '', sets: Array.from({ length: prev ? Math.max(1, prev.sets.length) : 3 }, newSet) });
-    store.save();
-    render();
-  }
-
-  // exercices dans l'ordre, les groupes (superset, circuit) réunis dans un cadre avec leur minuteur
-  function exerciseBlocks() {
-    const out = [];
-    s.exercises.forEach((ex, ei) => {
-      const g = groupOf(s, ex);
-      const first = g && s.exercises.findIndex((e) => e.gid === ex.gid) === ei;
-      if (!g) return out.push(exerciseCard(ex, ei));
-      if (first) out.push(h('div', { class: 'group' + (isTimed(g) ? ' timed' : '') },
-        h('div', { class: 'group-h' }, h('span', { class: 'gtag' }, groupLetter(s, ex.gid)), h('div', { class: 'grow' }, h('b', {}, modeLabel(g)), h('div', { class: 'muted small' }, describeGroup(g)))),
-        circuits.panel(ex.gid)));
-      out[out.length - 1].append(exerciseCard(ex, ei));
-    });
-    return out;
-  }
-
-  // montée en charge automatique : échauffement pour tous les exercices dont la première série n'est pas faite
-  function autoWarmCard() {
-    const eligible = s.exercises.filter((ex) => !ex.warmup && ex.sets.length && !ex.sets[0].done && !inTimedCircuit(s, ex));
-    if (!eligible.length) return null;
-    const n = s.warmN != null ? s.warmN : store.data.gear.warmup;
-    const setN = (v) => { s.warmN = Math.max(0, Math.min(WARMUP_MAX, v)); store.save(); render(); };
-    function apply() {
-      const added = [], skipped = [];
-      for (const ex of eligible) {
-        const w = warmFor(ex, lastPerf(ex.exId));
-        if (w.length) { ex.warmup = w; added.push(ex); } else skipped.push(ex);
-      }
-      store.save();
-      render();
-      toast((added.length ? 'Échauffement ajouté à ' + added.length + ' exercice' + (added.length > 1 ? 's' : '') : 'Aucun échauffement ajouté') +
-        (skipped.length ? ' · sans charge visée : ' + skipped.map((e) => lib.fr(e.exId)).join(', ') : ''));
-    }
-    return h('div', { class: 'card warmcard' },
-      h('div', { class: 'row between' },
-        h('div', { class: 'grow' }, h('b', {}, 'Montée en charge'), h('div', { class: 'muted small' }, 'Séries d\'échauffement d\'après la charge visée de chaque exercice.')),
-        h('span', { class: 'stepper' },
-          h('button', { class: 'btn sm', 'aria-label': 'Moins de séries', disabled: n === 0, onclick: () => setN(n - 1) }, '−'),
-          h('span', { class: 'small' }, warmLabel(n)),
-          h('button', { class: 'btn sm', 'aria-label': 'Plus de séries', disabled: n >= WARMUP_MAX, onclick: () => setN(n + 1) }, '+'))),
-      h('button', { class: 'btn primary wide', onclick: apply }, 'Monter en charge automatiquement'));
-  }
-
   function render() {
     const scroll = ov.el.scrollTop;
     ov.el.replaceChildren(h('div', { class: 'pad' },
@@ -259,21 +208,7 @@ function editTemplate(id) {
     hints[i]();
     return el;
   }
-  // déplacer un exercice : à l'intérieur de son groupe, ou tout le groupe d'un bloc s'il en sort
-  function move(i, dir) {
-    const list = draft.exercises, x = list[i], y = list[i + dir];
-    if (!y) return;
-    if (x.gid && x.gid === y.gid) { list[i] = y; list[i + dir] = x; return render(); }
-    // bloc déplacé (l'exercice seul, ou son groupe) et bloc voisin à enjamber
-    const block = (e) => (e.gid && draft.groups && draft.groups[e.gid] ? list.filter((z) => z.gid === e.gid) : [e]);
-    const mine = block(x), other = block(y);
-    const rest = list.filter((z) => !mine.includes(z));
-    const at = rest.indexOf(other[0]) + (dir > 0 ? other.length : 0);
-    rest.splice(at, 0, ...mine);
-    draft.exercises = rest;
-    normalizeGroups(draft);
-    render();
-  }
+  function move(i, dir) { moveExercise(draft, i, dir); render(); }
 
   function save() {
     draft.name = draft.name.trim();

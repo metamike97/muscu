@@ -91,6 +91,19 @@ function normalizeGroups(s) {
   s.exercises = out;
   if (!Object.keys(s.groups).length) delete s.groups;
 }
+// déplace l'exercice i d'un cran (dir = -1 ou 1) : à l'intérieur de son groupe, ou tout son groupe d'un bloc
+// quand il en sort ou enjambe un autre groupe (un groupe n'est jamais coupé). s : séance ou modèle.
+function moveExercise(s, i, dir) {
+  const list = s.exercises, x = list[i], y = list[i + dir];
+  if (!x || !y) return;
+  if (x.gid && x.gid === y.gid) { list[i] = y; list[i + dir] = x; return; }
+  const block = (e) => (e.gid && s.groups && s.groups[e.gid] ? list.filter((z) => z.gid === e.gid) : [e]);
+  const mine = block(x), other = block(y);
+  const rest = list.filter((z) => !mine.includes(z));
+  rest.splice(rest.indexOf(other[0]) + (dir > 0 ? other.length : 0), 0, ...mine);
+  s.exercises = rest;
+  normalizeGroups(s);
+}
 // groupes recopiés dans un modèle ou une nouvelle séance : réglages seulement (ni minuteur ni résultat)
 function settingsOnlyGroups(groups) {
   const out = cleanGroups(groups);

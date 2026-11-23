@@ -16,4 +16,5 @@ Suivi de séances de musculation : PWA statique (HTML/JS/CSS, sans framework), i
 
 ## Avant chaque déploiement
 
+    node tools/check.js              # vérifie la logique sans interface (données reçues, déplacements dans les groupes)
     python3 tools/stamp.py           # met à jour la version du cache hors ligne dans sw.js
