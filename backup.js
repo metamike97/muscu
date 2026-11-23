@@ -15,6 +15,7 @@ function buildBackup() {
       nameOverrides: d.nameOverrides || {}, // noms d'exercices corrigés
       bodyweight: d.bodyweight || [],
       customExercises: d.customExercises || [], // exercices perso
+      exerciseEdits: d.exerciseEdits || {}, // exercices de la bibliothèque modifiés
     },
   };
 }
@@ -72,6 +73,7 @@ function parseBackup(text) {
     deleted: validT.length - goodT.length + validS.length - goodS.length + allW.length - weights.length,
     nameOverrides: cleanOverrides(obj.data.nameOverrides),
     customs: cleanCustoms(obj.data.customExercises),
+    edits: cleanEdits(obj.data.exerciseEdits),
   };
 }
 
@@ -92,11 +94,11 @@ async function importData(file) {
   let b;
   try { b = parseBackup(await file.text()); } catch (e) { return alert(e.message); }
   const names = Object.keys(b.nameOverrides).length;
-  if (!b.sessions.length && !b.templates.length && !b.weights.length && !names && !b.customs.length) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
+  if (!b.sessions.length && !b.templates.length && !b.weights.length && !names && !b.customs.length && !Object.keys(b.edits).length) return alert(b.deleted ? 'Tout ce que contient ce fichier a été supprimé depuis : rien à importer.' : 'Aucune séance ni modèle valide dans ce fichier.');
   const s = mergeById(store.data.sessions, b.sessions);
   const t = mergeById(store.data.templates, b.templates);
   const w = mergeById(store.data.bodyweight, b.weights);
-  const msg = 'Importer ' + b.sessions.length + ' séance(s), ' + b.templates.length + ' modèle(s), ' + b.weights.length + ' pesée(s), ' + b.customs.length + ' exercice(s) perso et ' + names + ' nom(s) d\'exercice corrigé(s) ?\n' +
+  const msg = 'Importer ' + b.sessions.length + ' séance(s), ' + b.templates.length + ' modèle(s), ' + b.weights.length + ' pesée(s), ' + b.customs.length + ' exercice(s) perso, ' + names + ' nom(s) d\'exercice corrigé(s) et ' + Object.keys(b.edits).length + ' exercice(s) de la bibliothèque modifié(s) ?\n' +
     '• Nouveaux : ' + (s.added + t.added + w.added) + '\n• Déjà présents (remplacés si plus récents) : ' + (s.updated + t.updated + w.updated) +
     (b.skipped ? '\n• Ignorés (invalides) : ' + b.skipped : '') +
     (b.deleted ? '\n• Ignorés (supprimés depuis) : ' + b.deleted : '') + '\n\nRien n\'est supprimé de ce qui existe déjà.';
@@ -106,6 +108,7 @@ async function importData(file) {
   store.data.bodyweight = w.list;
   store.data.nameOverrides = mergeOverrides(store.data.nameOverrides, b.nameOverrides);
   store.data.customExercises = mergeCustoms(store.data.customExercises, b.customs);
+  store.data.exerciseEdits = mergeOverrides(store.data.exerciseEdits, b.edits);
   lib.refreshCustoms();
   store.save();
   toast('Import terminé');

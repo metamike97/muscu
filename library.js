@@ -24,8 +24,29 @@ const hayOf = (e) => norm([
   e.custom ? 'perso' : '',
 ].join(' '));
 
-// exercices perso (customex.js) : en tête de liste ; les masqués restent connus (byId) pour l'historique
+// Exercices de la bibliothèque modifiés par l'utilisateur (store.data.exerciseEdits) : les champs modifiés remplacent
+// ceux d'origine directement dans lib.byId, donc partout (recherche, filtres, carte des muscles, récupération, disques).
+// L'original est gardé dans e.orig pour pouvoir le rétablir.
+const EDIT_FIELDS = ['primaryMuscles', 'secondaryMuscles', 'equipment', 'category', 'level', 'force', 'mechanic'];
+lib.edited = (id) => {
+  const o = store.data && store.data.exerciseEdits && store.data.exerciseEdits[id];
+  return !!(o && EDIT_FIELDS.some((k) => k in o));
+};
+lib.applyEdits = () => {
+  const edits = (store.data && store.data.exerciseEdits) || {};
+  for (const e of Object.values(lib.byId)) {
+    if (e.custom) continue;
+    if (!e.orig) e.orig = Object.fromEntries(EDIT_FIELDS.map((k) => [k, e[k]]));
+    const o = edits[e.id] || {};
+    for (const k of EDIT_FIELDS) e[k] = k in o ? o[k] : e.orig[k];
+    e.baseHay = hayOf(e);
+  }
+};
+
+// données de l'utilisateur à appliquer à la bibliothèque (au démarrage, après une synchro, un import ou une modification) :
+// exercices modifiés, puis exercices perso (customex.js) en tête de liste ; les masqués restent connus (byId) pour l'historique
 lib.refreshCustoms = () => {
+  lib.applyEdits();
   lib.exercises = lib.exercises.filter((e) => !e.custom);
   const customs = (store.data && store.data.customExercises) || [];
   for (const c of customs) {
@@ -118,9 +139,9 @@ function mountLibrary(root, { onPick, title, onClose } = {}) {
         h('div', { class: 'grow' },
           h('div', { class: 'fr' }, fr),
           fr !== e.name && !e.custom && h('div', { class: 'en' }, e.name),
-          h('div', { class: 'tags' }, e.custom && h('span', { class: 'tag perso' }, 'Perso'), [...e.primaryMuscles.map(trMuscle), trEquip(e.equipment)].map((t) => h('span', { class: 'tag' }, t)))
+          h('div', { class: 'tags' }, e.custom && h('span', { class: 'tag perso' }, 'Perso'), !e.custom && (lib.edited(e.id) || lib.override(e.id)) && h('span', { class: 'tag perso' }, 'Modifié'), [...e.primaryMuscles.map(trMuscle), trEquip(e.equipment)].map((t) => h('span', { class: 'tag' }, t)))
         ),
-        onPick ? h('span', { class: 'plus' }, '+') : h('span', { class: 'edit', 'aria-label': 'Corriger le nom' }, '✎')
+        onPick ? h('span', { class: 'plus' }, '+') : h('span', { class: 'edit', 'aria-label': 'Modifier l\'exercice' }, '✎')
       );
       if (onPick) li.addEventListener('click', () => {
         onPick(e.id);
@@ -128,44 +149,11 @@ function mountLibrary(root, { onPick, title, onClose } = {}) {
         p.textContent = '✓';
         setTimeout(() => (p.textContent = '+'), 900);
       });
-      else li.addEventListener('click', () => editExerciseName(e.id, render));
+      else li.addEventListener('click', () => editExercise(e.id, render));
       return li;
     }));
     more.hidden = res.length <= shown;
   }
-}
-
-// Corriger le nom français d'un exercice (synchronisé entre appareils). onDone() est appelé après enregistrement.
-function editExerciseName(exId, onDone) {
-  if (lib.byId[exId] && lib.byId[exId].custom) return editCustomExercise(exId, onDone); // exercice perso : son propre éditeur
-  const ov = overlay();
-  const original = lib.frDefault(exId);
-  const hasOverride = !!lib.override(exId);
-  const input = h('input', { type: 'text', value: lib.fr(exId), maxLength: 80, autocomplete: 'off', spellcheck: true });
-
-  function commit(name) {
-    // un nom vide ou identique à l'original = "rétabli" (on garde une entrée vide pour que ça se propage)
-    const reset = !name || name === original;
-    store.data.nameOverrides[exId] = { name: reset ? '' : name, updatedAt: Date.now() };
-    store.save();
-    lib.refreshOverrides();
-    ov.close();
-    if (onDone) onDone();
-    refreshView();
-    syncSoon();
-    toast(reset ? "Nom d'origine rétabli" : 'Nom enregistré');
-  }
-
-  ov.el.append(h('div', { class: 'pad' },
-    h('div', { class: 'row between' }, h('h1', {}, 'Corriger le nom'), h('button', { class: 'btn', onclick: () => ov.close() }, 'Annuler')),
-    h('p', { class: 'en' }, lib.en(exId)),
-    h('label', { class: 'field' }, h('span', { class: 'muted' }, 'Nom affiché'), input),
-    h('p', { class: 'muted' }, "Nom d'origine : " + original),
-    h('button', { class: 'btn primary wide', onclick: () => commit(input.value.trim()) }, 'Enregistrer'),
-    hasOverride && h('button', { class: 'btn wide', onclick: () => commit('') }, "Rétablir le nom d'origine"),
-    h('p', { class: 'muted' }, "Le nom anglais et le nom d'origine restent utilisables dans la recherche.")));
-  input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') commit(input.value.trim()); });
-  setTimeout(() => { input.focus(); input.select(); }, 50);
 }
 
 // Ouvre le sélecteur plein écran ; onPick(exId) est appelé à chaque exercice touché

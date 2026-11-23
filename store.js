@@ -4,6 +4,7 @@
 //   activeId  : id de la séance en cours (ou null)
 //   rest      : chrono de repos en cours { endsAt, total, beeped } (ou null)
 //   customExercises : exercices créés dans l'app (voir customex.js)
+//   exerciseEdits : caractéristiques modifiées d'exercices de la bibliothèque (voir customex.js)
 //   gear      : matériel de cet appareil (barres, disques), non synchronisé : voir plates.js
 const KEY = 'muscu.v1';
 
@@ -28,6 +29,7 @@ const store = {
     d.nameOverrides = cleanOverrides(d.nameOverrides);
     d.bodyweight = cleanWeights(d.bodyweight);
     d.customExercises = cleanCustoms(d.customExercises);
+    d.exerciseEdits = cleanEdits(d.exerciseEdits);
     d.gear = cleanGear(d.gear);
     return d;
   },
@@ -75,12 +77,17 @@ function cleanNoteOn(o) {
 function cleanNumOn(o, key, lo, hi) {
   if (key in o && o[key] != null && !(Number.isFinite(o[key]) && o[key] >= lo && o[key] <= hi)) o[key] = null;
 }
+// objectif de reps par minute (EMOM) et identifiant de groupe
+function cleanEmomOn(x) {
+  if ('emomReps' in x && !(Number.isInteger(x.emomReps) && x.emomReps > 0 && x.emomReps < 1000)) delete x.emomReps;
+  if ('gid' in x && !(typeof x.gid === 'string' && x.gid.length <= 80)) delete x.gid;
+}
 function cleanSession(s) {
   const c = { ...s };
   cleanNoteOn(c);
   if ('muscles' in c) c.muscles = cleanMuscles(c.muscles);
   if ('updatedAt' in c && !Number.isFinite(c.updatedAt)) delete c.updatedAt;
-  c.exercises = (c.exercises || []).map((e) => { const x = { ...e }; cleanNoteOn(x); cleanNumOn(x, 'targetKg', 0, 1000); return x; });
+  c.exercises = (c.exercises || []).map((e) => { const x = { ...e }; cleanNoteOn(x); cleanNumOn(x, 'targetKg', 0, 1000); cleanEmomOn(x); return x; });
   if ('groups' in c) { c.groups = cleanGroups(c.groups); normalizeGroups(c); } // supersets et circuits (circuits.js)
   return c;
 }
@@ -88,7 +95,8 @@ function cleanTemplate(t) {
   const c = { ...t };
   if ('muscles' in c) c.muscles = cleanMuscles(c.muscles);
   if ('updatedAt' in c && !Number.isFinite(c.updatedAt)) delete c.updatedAt;
-  c.exercises = (t.exercises || []).map((e) => { const x = { ...e }; cleanNumOn(x, 'kg', 0, 1000); return x; });
+  c.exercises = (t.exercises || []).map((e) => { const x = { ...e }; cleanNumOn(x, 'kg', 0, 1000); cleanEmomOn(x); return x; });
+  if ('groups' in c) { c.groups = settingsOnlyGroups(c.groups); normalizeGroups(c); } // supersets et circuits du modèle
   return c;
 }
 // date de dernière modification d'un élément (séances terminées avant l'ajout des notes : leur date de fin)

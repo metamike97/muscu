@@ -91,6 +91,12 @@ function normalizeGroups(s) {
   s.exercises = out;
   if (!Object.keys(s.groups).length) delete s.groups;
 }
+// groupes recopiés dans un modèle ou une nouvelle séance : réglages seulement (ni minuteur ni résultat)
+function settingsOnlyGroups(groups) {
+  const out = cleanGroups(groups);
+  for (const g of Object.values(out)) { delete g.timer; delete g.result; }
+  return out;
+}
 // minuteur déjà lancé : la composition du circuit ne doit plus changer (les intervalles sont attribués par position)
 const timerStarted = (g) => !!(g && g.timer && (g.timer.startedAt || g.timer.acc));
 
@@ -113,22 +119,24 @@ const hiitWorkDone = (g, n, sec) => Math.min(g.rounds * n, sec < g.work ? 0 : Ma
 
 // ---------- éditeur : grouper un exercice ----------
 
+// s : séance, ou brouillon de modèle si tpl (séries = un nombre, reps visées = e.reps, ni minuteur ni résultat).
 // onDone() est appelé après modification
-function editGroup(s, ex, onDone) {
+function editGroup(s, ex, onDone, tpl) {
   const ov = overlay();
   const cur = groupOf(s, ex);
-  const locked = timerStarted(cur);
+  const locked = !tpl && timerStarted(cur);
+  const nSets = (e) => (tpl ? e.sets : e.sets.length);
   const st = {
     kind: cur ? cur.kind : 'none',
     mode: cur ? cur.mode : 'classique',
-    rounds: cur ? cur.rounds : Math.max(GROUP_DEFAULTS.rounds, ex.sets.length),
+    rounds: cur ? cur.rounds : Math.max(GROUP_DEFAULTS.rounds, nSets(ex)),
     rest: cur ? cur.rest : ex.restSec || GROUP_DEFAULTS.rest,
     work: cur ? cur.work : GROUP_DEFAULTS.work,
     hiitRest: cur && cur.mode === 'hiit' ? cur.rest : GROUP_DEFAULTS.hiitRest,
     minutes: cur ? cur.minutes : GROUP_DEFAULTS.minutes,
     sel: new Set(cur ? groupMembers(s, ex.gid) : [ex]),
   };
-  const defaultReps = (e) => { const r = parseReps(e.targetReps); return e.emomReps || (r ? r.lo : 10); };
+  const defaultReps = (e) => { const r = parseReps(tpl ? e.reps : e.targetReps); return e.emomReps || (r ? r.lo : 10); };
   const emom = new Map(s.exercises.map((e) => [e, defaultReps(e)]));
 
   const seg = (opts, value, onPick) => h('div', { class: 'seg' }, opts.map(([v, l]) => h('button', { type: 'button', class: 'seg-b' + (value === v ? ' on' : ''), disabled: locked, onclick: () => onPick(v) }, l)));
@@ -142,7 +150,7 @@ function editGroup(s, ex, onDone) {
       h('div', { class: 'row between' }, h('h1', { class: 'grow' }, 'Éditer'), h('button', { class: 'btn', onclick: () => ov.close() }, 'Annuler')),
       h('div', { class: 'card' },
         h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId)),
-        h('button', { class: 'btn sm', style: 'margin-top:8px', onclick: () => { ov.close(); editExerciseName(ex.exId, onDone); } }, '✎ Corriger le nom')),
+        h('button', { class: 'btn sm', style: 'margin-top:8px', onclick: () => { ov.close(); editExercise(ex.exId, onDone); } }, '✎ Modifier l\'exercice')),
 
       h('h2', {}, 'Grouper'),
       seg([['none', 'Seul'], ['superset', 'Superset'], ['circuit', 'Circuit']], st.kind, (v) => { st.kind = v; render(); }),
@@ -200,7 +208,8 @@ function editGroup(s, ex, onDone) {
     s.groups = s.groups || {};
     s.groups[gid] = g;
     // une série par tour (on ne retire jamais une série validée)
-    if (g.mode === 'classique' || g.mode === 'hiit') {
+    if (tpl && (g.mode === 'classique' || g.mode === 'hiit')) sel.forEach((e) => (e.sets = g.rounds));
+    else if (g.mode === 'classique' || g.mode === 'hiit') {
       for (const e of sel) {
         while (e.sets.length < g.rounds) e.sets.push(newSet());
         while (e.sets.length > g.rounds && !e.sets[e.sets.length - 1].done) e.sets.pop();
@@ -208,14 +217,14 @@ function editGroup(s, ex, onDone) {
     }
     if (isTimed(g)) sel.forEach((e) => delete e.warmup); // pas d'échauffement dans un circuit chronométré
     if (g.mode === 'emom') sel.forEach((e) => (e.emomReps = emom.get(e)));
-    if (g.mode === 'amrap') g.result = { rounds: 0 };
-    if (g.mode === 'emom') g.result = { log: [] };
+    if (!tpl && g.mode === 'amrap') g.result = { rounds: 0 };
+    if (!tpl && g.mode === 'emom') g.result = { log: [] };
     normalizeGroups(s);
     done();
   }
 
   function done() {
-    store.save();
+    if (!tpl) store.save(); // un modèle n'est enregistré qu'avec son bouton « Enregistrer »
     ov.close();
     if (onDone) onDone();
   }

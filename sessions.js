@@ -32,26 +32,31 @@ function repsRange(sets) {
   return lo === hi ? String(lo) : lo + '-' + hi;
 }
 // ce dont startSession a besoin, depuis un modèle ou depuis une séance passée
+// groupes (supersets, circuits) : réglages repris, sans minuteur ni résultat (voir settingsOnlyGroups)
+const groupFields = (e) => ({ ...(e.gid ? { gid: e.gid } : {}), ...(e.emomReps ? { emomReps: e.emomReps } : {}) });
 const fromTemplate = (t) => ({
-  name: t.name, templateId: t.id, muscles: cleanMuscles(t.muscles),
-  exercises: t.exercises.map((te) => ({ exId: te.exId, restSec: te.restSec, targetReps: te.reps, targetKg: te.kg == null ? null : te.kg, nSets: te.sets })),
+  name: t.name, templateId: t.id, muscles: cleanMuscles(t.muscles), groups: settingsOnlyGroups(t.groups),
+  exercises: t.exercises.map((te) => ({ exId: te.exId, restSec: te.restSec, targetReps: te.reps, targetKg: te.kg == null ? null : te.kg, nSets: te.sets, ...groupFields(te) })),
 });
 const fromSession = (s) => ({
-  name: s.name, templateId: s.templateId || null, muscles: cleanMuscles(s.muscles),
-  exercises: s.exercises.map((ex) => ({ exId: ex.exId, restSec: ex.restSec, targetReps: ex.targetReps || repsRange(ex.sets), targetKg: null, nSets: ex.sets.length })),
+  name: s.name, templateId: s.templateId || null, muscles: cleanMuscles(s.muscles), groups: settingsOnlyGroups(s.groups),
+  exercises: s.exercises.map((ex) => ({ exId: ex.exId, restSec: ex.restSec, targetReps: ex.targetReps || repsRange(ex.sets), targetKg: null, nSets: ex.sets.length, ...groupFields(ex) })),
 });
 
 function saveAsTemplate(s) {
   const name = (prompt('Nom du modèle :', s.name) || '').trim();
   if (!name) return;
   const now = Date.now();
-  store.data.templates.push({
+  const t = {
     id: uid(), name, createdAt: now, updatedAt: now, muscles: sessionMuscles(s),
     exercises: s.exercises.map((ex) => {
       const heavy = ex.sets.find((x) => x.kg > 0);
-      return { exId: ex.exId, sets: ex.sets.length, reps: ex.targetReps || repsRange(ex.sets), kg: heavy ? heavy.kg : null, restSec: ex.restSec == null ? DEFAULT_REST : ex.restSec };
+      return { exId: ex.exId, sets: Math.max(1, ex.sets.length), reps: ex.targetReps || repsRange(ex.sets), kg: heavy ? heavy.kg : null, restSec: ex.restSec == null ? DEFAULT_REST : ex.restSec, ...groupFields(ex) };
     }),
-  });
+  };
+  const groups = settingsOnlyGroups(s.groups);
+  if (Object.keys(groups).length) { t.groups = groups; normalizeGroups(t); }
+  store.data.templates.push(t);
   store.save();
   refreshView();
   syncSoon();
@@ -185,28 +190,60 @@ function editTemplate(id) {
         h('div', { class: 'row between' }, h('b', {}, 'Groupes ciblés'), h('button', { class: 'btn sm', onclick: () => { draft.muscles = groupsOfExercises(draft.exercises); render(); } }, 'Déduire des exercices')),
         muscleChips(draft.muscles || [], (m) => { draft.muscles = m; })),
 
-      draft.exercises.map((te, i) => h('div', { class: 'card' },
-        h('div', { class: 'row between' },
-          h('div', { class: 'grow' }, h('b', {}, lib.fr(te.exId)), h('div', { class: 'en' }, lib.en(te.exId))),
-          h('button', { class: 'btn sm', disabled: i === 0, onclick: () => { move(i, -1); } }, '↑'),
-          h('button', { class: 'btn sm', disabled: i === draft.exercises.length - 1, onclick: () => { move(i, 1); } }, '↓'),
-          h('button', { class: 'btn sm danger', onclick: () => { draft.exercises.splice(i, 1); render(); } }, '✕')),
-        h('div', { class: 'fields' },
-          field('Séries', h('input', { type: 'text', inputMode: 'numeric', value: te.sets, oninput: (e) => (te.sets = Math.max(1, parseInt(e.target.value) || 1)) })),
-          field('Reps visées', h('input', { type: 'text', value: te.reps, placeholder: '8-12', oninput: (e) => { te.reps = e.target.value; hints[i](); } })),
-          field(te.prog === 'aucune' ? 'Charge (kg)' : 'Départ (kg)', h('input', { type: 'text', inputMode: 'decimal', value: fmtNum(te.kg), placeholder: lastKgText(te.exId), oninput: (e) => { te.kg = parseNum(e.target.value); hints[i](); } })),
-          field('Repos (s)', h('input', { type: 'text', inputMode: 'numeric', value: te.restSec, oninput: (e) => (te.restSec = parseInt(e.target.value) || 0) }))),
-        h('div', { class: 'fields two' },
-          field('Progression', h('select', { onchange: (e) => { if (e.target.value === 'auto') delete te.prog; else te.prog = e.target.value; render(); } },
-            PROG_RULES.map(([v, l]) => h('option', { value: v, selected: (te.prog || 'auto') === v }, l)))),
-          te.prog !== 'aucune' && field('Palier (kg)', h('input', { type: 'text', inputMode: 'decimal', value: fmtNum(te.inc), placeholder: fmtNum(loadStep(te.exId)), oninput: (e) => { const v = parseNum(e.target.value); if (v > 0) te.inc = v; else delete te.inc; hints[i](); } }))),
-        progHint(te, i))),
+      exerciseBlocks(),
 
       h('button', { class: 'btn wide', onclick: () => pickExercise((exId) => { draft.exercises.push({ exId, sets: 3, reps: '8-12', kg: null, restSec: DEFAULT_REST }); render(); }) }, '+ Ajouter un exercice'),
       h('button', { class: 'btn primary wide', onclick: save }, 'Enregistrer'),
       existing && h('button', { class: 'btn danger wide', onclick: remove }, 'Supprimer le modèle'),
     ));
     ov.el.scrollTop = scroll;
+  }
+
+  // exercices, ceux d'un même groupe (superset, circuit) réunis dans un cadre avec leur lettre et leurs réglages
+  function exerciseBlocks() {
+    const out = [];
+    hints.length = 0;
+    let box = null, boxGid = null;
+    draft.exercises.forEach((te, i) => {
+      const g = groupOf(draft, te);
+      if (!g) { box = null; boxGid = null; out.push(exerciseCard(te, i, null)); return; }
+      if (te.gid !== boxGid) {
+        boxGid = te.gid;
+        box = h('div', { class: 'group' + (isTimed(g) ? ' timed' : '') },
+          h('div', { class: 'group-h' }, h('span', { class: 'gtag' }, groupLetter(draft, te.gid)),
+            h('div', { class: 'grow' }, h('b', {}, modeLabel(g)), h('div', { class: 'muted small' }, describeGroup(g)))));
+        out.push(box);
+      }
+      box.append(exerciseCard(te, i, g));
+    });
+    return out;
+  }
+
+  function exerciseCard(te, i, g) {
+    // dans un superset ou un circuit classique / HIIT, le nombre de séries et le repos viennent du groupe
+    const byRounds = g && (g.mode === 'classique' || g.mode === 'hiit');
+    return h('div', { class: 'card' },
+      h('div', { class: 'row between' },
+        h('div', { class: 'grow' }, h('b', {}, lib.fr(te.exId)), h('div', { class: 'en' }, lib.en(te.exId))),
+        h('button', { class: 'btn sm', 'aria-label': 'Monter', disabled: i === 0, onclick: () => { move(i, -1); } }, '↑'),
+        h('button', { class: 'btn sm', 'aria-label': 'Descendre', disabled: i === draft.exercises.length - 1, onclick: () => { move(i, 1); } }, '↓'),
+        h('button', { class: 'btn sm quiet', 'aria-label': 'Retirer', onclick: () => { draft.exercises.splice(i, 1); normalizeGroups(draft); render(); } }, '✕')),
+      h('div', { class: 'row', style: 'margin-top:6px' },
+        h('button', { class: 'btn sm', onclick: () => editGroup(draft, te, render, true) }, g ? 'Éditer le groupe' : 'Éditer · grouper')),
+      h('div', { class: byRounds ? 'fields two' : 'fields' },
+        !byRounds && field('Séries', h('input', { type: 'text', inputMode: 'numeric', value: te.sets, oninput: (e) => (te.sets = Math.max(1, parseInt(e.target.value) || 1)) })),
+        field('Reps visées', h('input', { type: 'text', value: te.reps, placeholder: '8-12', oninput: (e) => { te.reps = e.target.value; hints[i] && hints[i](); } })),
+        field(te.prog === 'aucune' ? 'Charge (kg)' : 'Départ (kg)', h('input', { type: 'text', inputMode: 'decimal', value: fmtNum(te.kg), placeholder: lastKgText(te.exId), oninput: (e) => { te.kg = parseNum(e.target.value); hints[i] && hints[i](); } })),
+        !g && field('Repos (s)', h('input', { type: 'text', inputMode: 'numeric', value: te.restSec, oninput: (e) => (te.restSec = parseInt(e.target.value) || 0) }))),
+      byRounds && h('p', { class: 'muted small' }, g.rounds + ' séries : une par tour du groupe.'),
+      g && g.mode === 'emom' && h('p', { class: 'muted small' }, 'Objectif : ' + (te.emomReps || '?') + ' reps par minute.'),
+      isTimed(g)
+        ? h('p', { class: 'muted small' }, 'Circuit chronométré : pas de conseil de progression pour cet exercice.')
+        : [h('div', { class: 'fields two' },
+          field('Progression', h('select', { onchange: (e) => { if (e.target.value === 'auto') delete te.prog; else te.prog = e.target.value; render(); } },
+            PROG_RULES.map(([v, l]) => h('option', { value: v, selected: (te.prog || 'auto') === v }, l)))),
+          te.prog !== 'aucune' && field('Palier (kg)', h('input', { type: 'text', inputMode: 'decimal', value: fmtNum(te.inc), placeholder: fmtNum(loadStep(te.exId)), oninput: (e) => { const v = parseNum(e.target.value); if (v > 0) te.inc = v; else delete te.inc; hints[i] && hints[i](); } }))),
+        progHint(te, i)]);
   }
 
   const field = (label, input) => h('label', { class: 'field' }, h('span', { class: 'muted' }, label), input);
@@ -222,13 +259,28 @@ function editTemplate(id) {
     hints[i]();
     return el;
   }
-  function move(i, dir) { const [x] = draft.exercises.splice(i, 1); draft.exercises.splice(i + dir, 0, x); render(); }
+  // déplacer un exercice : à l'intérieur de son groupe, ou tout le groupe d'un bloc s'il en sort
+  function move(i, dir) {
+    const list = draft.exercises, x = list[i], y = list[i + dir];
+    if (!y) return;
+    if (x.gid && x.gid === y.gid) { list[i] = y; list[i + dir] = x; return render(); }
+    // bloc déplacé (l'exercice seul, ou son groupe) et bloc voisin à enjamber
+    const block = (e) => (e.gid && draft.groups && draft.groups[e.gid] ? list.filter((z) => z.gid === e.gid) : [e]);
+    const mine = block(x), other = block(y);
+    const rest = list.filter((z) => !mine.includes(z));
+    const at = rest.indexOf(other[0]) + (dir > 0 ? other.length : 0);
+    rest.splice(at, 0, ...mine);
+    draft.exercises = rest;
+    normalizeGroups(draft);
+    render();
+  }
 
   function save() {
     draft.name = draft.name.trim();
     if (!draft.name) return toast('Donne un nom au modèle');
     if (!draft.exercises.length) return toast('Ajoute au moins un exercice');
     draft.muscles = cleanMuscles(draft.muscles);
+    normalizeGroups(draft);
     draft.updatedAt = Date.now();
     draft.createdAt = draft.createdAt || draft.updatedAt;
     const list = store.data.templates;
@@ -260,7 +312,7 @@ const suggText = (sg) => (sg.kg > 0 ? kgText(sg.kg) + ' × ' : '') + sg.reps + '
 function planExercise(e, templateId) {
   const t = templateId && store.data.templates.find((x) => x.id === templateId);
   const te = t && t.exercises.find((x) => x.exId === e.exId);
-  const ex = { exId: e.exId, restSec: e.restSec, targetReps: e.targetReps || '', targetKg: e.targetKg == null ? null : e.targetKg, sets: Array.from({ length: e.nSets }, newSet) };
+  const ex = { exId: e.exId, restSec: e.restSec, targetReps: e.targetReps || '', targetKg: e.targetKg == null ? null : e.targetKg, sets: Array.from({ length: e.nSets }, newSet), ...groupFields(e) };
   const sg = suggestNext(e.exId, ex.targetReps, te, te ? te.kg : ex.targetKg);
   if (sg) {
     if (sg.kg != null) ex.targetKg = sg.kg;
@@ -281,6 +333,16 @@ function startSession(spec) {
     end: null,
     exercises: spec ? spec.exercises.map((e) => planExercise(e, spec.templateId)) : [],
   };
+  // groupes du modèle ou de la séance refaite : résultats des circuits chronométrés remis à zéro
+  const groups = spec ? settingsOnlyGroups(spec.groups) : {};
+  if (Object.keys(groups).length) {
+    for (const g of Object.values(groups)) {
+      if (g.mode === 'amrap') g.result = { rounds: 0 };
+      if (g.mode === 'emom') g.result = { log: [] };
+    }
+    s.groups = groups;
+    normalizeGroups(s);
+  } else s.exercises.forEach((e) => delete e.gid);
   store.data.sessions.push(s);
   store.data.activeId = s.id;
   store.data.rest = null;
