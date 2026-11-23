@@ -1,7 +1,7 @@
 // Service worker : garde tous les fichiers de l'app en cache pour fonctionner hors ligne.
 // VERSION est réécrite automatiquement par tools/stamp.py (hash du contenu) avant chaque déploiement :
 // un nouveau VERSION = un nouveau cache = les appareils récupèrent la nouvelle version.
-const VERSION = 'b204be938a';
+const VERSION = '38a72fe704';
 const CACHE = 'muscu-' + VERSION;
 const ASSETS = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',

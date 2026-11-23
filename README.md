@@ -5,6 +5,13 @@ Suivi de séances de musculation : PWA statique (HTML/JS/CSS, sans framework), i
 - Bibliothèque : [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (domaine public), noms traduits en français.
 - Données : stockées sur l'appareil (localStorage). Export/import JSON dans l'onglet Réglages.
 
+## Sécurité : un seul site sur ce domaine
+
+L'app est publiée sur `metamike97.github.io/muscu/`. Le navigateur partage le stockage (localStorage) entre
+toutes les pages de `metamike97.github.io` : le jeton de synchro et tout l'historique y sont lisibles par
+n'importe quel autre site GitHub Pages de ce compte. Ne publie pas d'autre projet GitHub Pages sur ce compte,
+ou déplace d'abord l'app sur son propre domaine (Settings → Pages → Custom domain).
+
 ## Développement
 
     python3 -m http.server 8000      # puis ouvrir http://127.0.0.1:8000/

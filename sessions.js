@@ -585,6 +585,7 @@ function openSession(sid) {
     s.muscles = cleanMuscles(s.muscles).length ? cleanMuscles(s.muscles) : workedGroups(s); // sans choix : groupes réellement travaillés
     s.end = Date.now();
     s.updatedAt = s.end;
+    dropLiveFields(s);
     store.data.activeId = null;
     store.data.rest = null;
     store.save();

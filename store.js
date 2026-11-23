@@ -11,6 +11,7 @@ const KEY = 'muscu.v1';
 const store = {
   data: null,
   saveOk: true,
+  failToastAt: 0,
 
   load() {
     try {
@@ -31,6 +32,7 @@ const store = {
     d.customExercises = cleanCustoms(d.customExercises);
     d.exerciseEdits = cleanEdits(d.exerciseEdits);
     d.gear = cleanGear(d.gear);
+    d.sessions.forEach(dropLiveFields);
     return d;
   },
 
@@ -39,8 +41,13 @@ const store = {
       localStorage.setItem(KEY, JSON.stringify(this.data));
       this.saveOk = true;
     } catch (e) {
-      if (this.saveOk) toast("Impossible d'enregistrer les données sur cet appareil");
+      // stockage plein (Safari : ~5 Mo par site) : ce qui n'est pas enregistré disparaît à la fermeture,
+      // donc on le redit (au plus une fois par minute) et l'accueil affiche un bandeau tant que ça dure
       this.saveOk = false;
+      if (Date.now() - this.failToastAt > 60000) {
+        this.failToastAt = Date.now();
+        toast('Stockage plein : tes dernières modifications ne sont PAS enregistrées. Exporte tes données (Réglages).');
+      }
     }
   },
 };
@@ -82,6 +89,10 @@ function cleanEmomOn(x) {
   if ('emomReps' in x && !(Number.isInteger(x.emomReps) && x.emomReps > 0 && x.emomReps < 1000)) delete x.emomReps;
   if ('gid' in x && !(typeof x.gid === 'string' && x.gid.length <= 80)) delete x.gid;
 }
+// conseil de progression (texte, reps) : utile pendant la séance seulement ; retiré des séances terminées pour gagner de la place
+function dropLiveFields(s) {
+  if (s.end) for (const ex of s.exercises || []) { delete ex.why; delete ex.sugReps; }
+}
 function cleanSession(s) {
   const c = { ...s };
   cleanNoteOn(c);
@@ -89,6 +100,7 @@ function cleanSession(s) {
   if ('updatedAt' in c && !Number.isFinite(c.updatedAt)) delete c.updatedAt;
   c.exercises = (c.exercises || []).map((e) => { const x = { ...e }; cleanNoteOn(x); cleanNumOn(x, 'targetKg', 0, 1000); cleanEmomOn(x); return x; });
   if ('groups' in c) { c.groups = cleanGroups(c.groups); normalizeGroups(c); } // supersets et circuits (circuits.js)
+  dropLiveFields(c);
   return c;
 }
 function cleanTemplate(t) {

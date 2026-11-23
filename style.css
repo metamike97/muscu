@@ -86,6 +86,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 .card.tap:active { transform: scale(0.98); transition-duration: .08s; }
 .card.banner { display: flex; align-items: center; gap: 10px; border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); box-shadow: none; }
 .card.media { display: flex; align-items: center; gap: 12px; }
+.card.banner.alert { background: color-mix(in srgb, var(--danger) 12%, var(--card)); border-color: var(--danger); }
+.card.banner.alert b { color: var(--danger); }
 .card.media .grow > b { font-size: 1.02rem; }
 
 /* bibliothèque */

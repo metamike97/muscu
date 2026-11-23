@@ -149,6 +149,11 @@ function renderSettings(root) {
 }
 
 function backupReminder() {
+  if (!store.saveOk) {
+    return h('div', { class: 'card banner alert' },
+      h('div', { class: 'grow' }, h('b', {}, 'Stockage plein'), h('div', { class: 'muted small' }, 'Tes dernières modifications ne sont pas enregistrées sur cet appareil. Exporte tes données tout de suite.')),
+      h('button', { class: 'btn', onclick: () => showTab('reglages') }, 'Réglages'));
+  }
   const d = store.data;
   const finished = d.sessions.filter((s) => s.end).length;
   const stale = !d.lastExport || Date.now() - d.lastExport > 14 * 864e5;
