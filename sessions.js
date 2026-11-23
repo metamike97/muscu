@@ -456,7 +456,7 @@ function openSession(sid) {
         tag && h('span', { class: 'gtag' }, tag),
         h('div', { class: 'grow' }, h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId)), customSteps(ex.exId)),
         h('button', { class: 'btn sm', onclick: () => editGroup(s, ex, render) }, 'Éditer'),
-        h('button', { class: 'btn sm', 'aria-label': 'Retirer', onclick: () => {
+        h('button', { class: 'btn sm quiet', 'aria-label': 'Retirer', onclick: () => {
           if (isTimed(g) && timerStarted(g) && !g.timer.ended) return toast('Arrête le circuit avant d\'en retirer un exercice');
           if (confirm('Retirer cet exercice de la séance ?')) { s.exercises.splice(ei, 1); normalizeGroups(s); store.save(); render(); }
         } }, '✕')),

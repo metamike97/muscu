@@ -18,6 +18,8 @@ function showTab(name) {
 }
 
 document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+// Safari iOS n'applique :active (retour visuel à l'appui) que si la page écoute les touchers
+document.addEventListener('touchstart', () => {}, { passive: true });
 
 // Hors ligne : le service worker est actif sur le site publié.
 // En local (localhost) il est désactivé pour ne pas servir de vieux fichiers pendant le développement ; ajouter ?sw=1 pour le tester.

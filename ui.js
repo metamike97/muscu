@@ -43,21 +43,33 @@ function fmtClock(sec) {
 }
 
 // Fenêtres plein écran empilables (séance, éditeur de modèle, sélecteur d'exercice…)
+// Elles montent du bas et redescendent par le même chemin (transition CSS .overlay / .shown).
+// À la fermeture, la fenêtre quitte tout de suite la pile et ne reçoit plus de touchers ; l'élément n'est retiré
+// du DOM qu'une fois descendu, donc le code appelant peut enchaîner sur une autre fenêtre sans attendre.
 const overlays = [];
 function overlay() {
   const el = h('div', { class: 'overlay' });
   const closers = [];
+  let closed = false;
   document.body.append(el);
   overlays.push(el);
   document.body.classList.add('noscroll');
+  void el.offsetHeight; // point de départ (sous l'écran) pris en compte avant de lancer la montée
+  el.classList.add('shown');
   return {
     el,
     onClose: (fn) => closers.push(fn),
     close() {
+      if (closed) return;
+      closed = true;
       closers.forEach((f) => f());
-      el.remove();
       overlays.splice(overlays.indexOf(el), 1);
       if (!overlays.length) document.body.classList.remove('noscroll');
+      el.classList.add('closing');
+      el.classList.remove('shown');
+      const done = () => el.remove();
+      el.addEventListener('transitionend', (e) => { if (e.target === el && e.propertyName === 'transform') done(); });
+      setTimeout(done, 600); // filet de sécurité (onglet en arrière-plan, mouvement réduit…)
     },
   };
 }
