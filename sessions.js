@@ -2,6 +2,15 @@
 
 const DEFAULT_REST = 90;
 const newSet = () => ({ kg: null, reps: null, rir: null, done: false });
+// série i validée : sa charge et ses reps passent aux séries suivantes pas encore faites,
+// sauf celles saisies à la main (auto = valeurs reportées, remplaçables au prochain report)
+function carryForward(sets, i) {
+  const { kg, reps } = sets[i];
+  for (const x of sets.slice(i + 1)) {
+    if (x.done || !(x.auto || (x.kg == null && x.reps == null))) continue;
+    Object.assign(x, { kg, reps, auto: true });
+  }
+}
 
 const sessionById = (id) => store.data.sessions.find((s) => s.id === id);
 const volume = (s) =>
@@ -372,6 +381,8 @@ function openSession(sid) {
     if (st.kg == null) st.kg = 0;
     st.done = true;
     st.ts = Date.now();
+    delete st.auto;
+    carryForward(ex.sets, i);
     primeAudio();
     store.save();
     restAfter(ex, i);
@@ -389,6 +400,7 @@ function openSession(sid) {
       oninput: (e) => {
         const n = parseNum(e.target.value);
         st[key] = n == null ? null : integer ? Math.round(n) : n;
+        delete st.auto; // saisie à la main : plus remplacée par les reports
         store.save();
       },
     });
@@ -452,11 +464,15 @@ function openSession(sid) {
       h('div', { class: 'row between' },
         tag && h('span', { class: 'gtag' }, tag),
         h('div', { class: 'grow' }, h('b', {}, lib.fr(ex.exId)), h('div', { class: 'en' }, lib.en(ex.exId)), customSteps(ex.exId)),
-        h('button', { class: 'btn sm', onclick: () => editGroup(s, ex, render) }, 'Éditer'),
+        h('button', { class: 'btn sm', 'aria-label': 'Monter', disabled: ei === 0, onclick: () => move(ei, -1) }, '↑'),
+        h('button', { class: 'btn sm', 'aria-label': 'Descendre', disabled: ei === s.exercises.length - 1, onclick: () => move(ei, 1) }, '↓'),
         h('button', { class: 'btn sm quiet', 'aria-label': 'Retirer', onclick: () => {
           if (isTimed(g) && timerStarted(g) && !g.timer.ended) return toast('Arrête le circuit avant d\'en retirer un exercice');
           if (confirm('Retirer cet exercice de la séance ?')) { s.exercises.splice(ei, 1); normalizeGroups(s); store.save(); render(); }
         } }, '✕')),
+      h('div', { class: 'row', style: 'margin-top:6px' },
+        h('button', { class: 'btn sm', onclick: () => editGroup(s, ex, render) }, 'Éditer'),
+        h('button', { class: 'btn sm', onclick: () => replaceExercise(ex) }, '⇄ Remplacer')),
       prev && ex.targetKg != null && h('div', { class: 'muted small' }, 'Dernière fois (' + new Date(prev.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ') : ' + prev.sets.map(setText).join(' · ')),
       prev && prev.note && h('div', { class: 'muted small' }, 'Note précédente : ' + prev.note),
       (ex.targetReps || ex.targetKg != null) && h('div', { class: 'muted small' }, 'Objectif : ' + ex.sets.length + ' × ' + (ex.targetReps || '?') + (ex.targetKg != null ? ' @ ' + fmtNum(ex.targetKg) + ' kg' : '')),
@@ -486,6 +502,32 @@ function openSession(sid) {
         canWarm && h('button', { class: 'btn sm', onclick: () => { ex.warmup = warmFor(ex, prev); store.save(); render(); } }, '+ Échauffement'),
         h('span', { class: 'grow' }),
         !g && h('label', { class: 'rest' }, h('span', { class: 'muted small' }, 'Repos '), h('input', { type: 'text', inputMode: 'numeric', class: 'num sm', value: ex.restSec, oninput: (e) => { ex.restSec = parseInt(e.target.value) || 0; store.save(); } }), h('span', { class: 'muted small' }, ' s'))));
+  }
+
+  // ordre des exercices : comme dans l'éditeur de modèle ; un circuit chronométré lancé garde son ordre interne
+  function move(ei, dir) {
+    const x = s.exercises[ei], y = s.exercises[ei + dir], g = groupOf(s, x);
+    if (y && x.gid && x.gid === y.gid && isTimed(g) && timerStarted(g) && !g.timer.ended) return toast('Circuit en cours : son ordre ne peut plus changer');
+    moveExercise(s, ei, dir);
+    store.save();
+    render();
+  }
+
+  // remplacer un exercice pas encore commencé : mêmes séries, reps visées, repos et groupe ; charge et conseil recalculés
+  function replaceExercise(ex) {
+    if (ex.sets.some((x) => x.done)) return toast('Des séries sont déjà validées : ajoute plutôt un nouvel exercice');
+    const pick = overlay();
+    mountLibrary(pick.el, {
+      title: 'Remplacer ' + lib.fr(ex.exId), onClose: () => pick.close(),
+      onPick: (exId) => {
+        pick.close();
+        const i = s.exercises.indexOf(ex);
+        if (i < 0) return;
+        s.exercises[i] = { ...planExercise({ exId, restSec: ex.restSec, targetReps: ex.targetReps, targetKg: null, nSets: ex.sets.length }, s.templateId), ...groupFields(ex) };
+        store.save();
+        render();
+      },
+    });
   }
 
   // exercice ajouté pendant la séance : autant de séries et le même repos que la dernière fois (les charges sont rappelées)

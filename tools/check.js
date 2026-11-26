@@ -2,6 +2,7 @@
 // Charge les scripts de l'app dans un même contexte (comme le navigateur) et teste :
 //   - cleanEdits : filtrage des modifications d'exercices reçues de la synchro ou d'un import
 //   - moveExercise : déplacement dans un modèle ou une séance, sans jamais couper un groupe
+//   - carryForward : report de la charge et des reps d'une série validée sur les suivantes
 //   - mergeDocs : fusion de la synchro (suppressions, versions les plus récentes, champs absents d'un ancien fichier)
 const fs = require('fs');
 const path = require('path');
@@ -17,7 +18,7 @@ const ctx = vm.createContext({
   localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
   document: { addEventListener: noop }, window: { addEventListener: noop },
 });
-for (const f of ['translations.js', 'store.js', 'library.js', 'customex.js', 'circuits.js', 'sync.js']) {
+for (const f of ['translations.js', 'store.js', 'library.js', 'customex.js', 'circuits.js', 'sync.js', 'sessions.js']) {
   vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f });
 }
 const run = (code) => vm.runInContext(code, ctx);
@@ -61,6 +62,15 @@ t = tpl(); moveExercise(t, 3, 1); assert.equal(order(t), 'A B1 B2 C', 'déjà en
 // deux groupes côte à côte : le premier passe après le second, sans se mélanger
 t = tpl(); t.exercises[3].gid = 'h'; t.exercises.push({ exId: 'D', gid: 'h' }); t.groups.h = { ...t.groups.g };
 moveExercise(t, 2, 1); assert.equal(order(t), 'A C D B1 B2', 'un groupe enjambe un autre groupe d\'un bloc');
+
+// ---------- carryForward ----------
+const carry = (sets, i) => { const c = JSON.parse(JSON.stringify(sets)); run('carryForward')(c, i); return JSON.parse(JSON.stringify(c)).map(({ kg, reps, done }) => [kg, reps, !!done]); };
+const empty = { kg: null, reps: null, done: false };
+assert.deepEqual(carry([{ kg: 60, reps: 8, done: true }, empty, empty], 0), [[60, 8, true], [60, 8, false], [60, 8, false]], 'reporté sur les séries suivantes');
+assert.deepEqual(carry([{ kg: 60, reps: 8, done: true }, { kg: 55, reps: null, done: false }, empty], 0), [[60, 8, true], [55, null, false], [60, 8, false]], 'saisie à la main gardée');
+assert.deepEqual(carry([{ kg: 62.5, reps: 6, done: true }, { kg: 60, reps: 8, done: false, auto: true }], 0), [[62.5, 6, true], [62.5, 6, false]], 'report précédent remplacé');
+assert.deepEqual(carry([empty, { kg: 70, reps: 5, done: true }, empty], 1), [[null, null, false], [70, 5, true], [70, 5, false]], 'séries précédentes intactes');
+assert.deepEqual(carry([{ kg: 60, reps: 8, done: true }, { kg: 50, reps: 10, done: true }], 0), [[60, 8, true], [50, 10, true]], 'séries déjà validées intactes');
 
 // ---------- mergeDocs (a = cet appareil, b = dépôt distant) ----------
 const merge = (a, b) => JSON.parse(JSON.stringify(run('(a, b) => mergeDocs(normDoc(a), normDoc(b))')(a, b)));
